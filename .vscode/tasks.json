@@ -1,0 +1,17 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Start Full Stack Application",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-Command",
+				"Start-Process powershell -ArgumentList '-Command', 'cd frontend; npm start' -WindowStyle Normal; Start-Process powershell -ArgumentList '-Command', 'cd backend; python app.py' -WindowStyle Normal"
+			],
+			"group": "build",
+			"problemMatcher": [],
+			"isBackground": true
+		}
+	]
+}

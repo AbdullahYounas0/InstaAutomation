@@ -1,0 +1,222 @@
+[
+  {
+    "timestamp": "2025-07-21T12:47:54.956443",
+    "user_id": "va-003",
+    "action": "logout",
+    "details": "User sharjeel bhai logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-21T12:48:21.806648",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-21T12:49:52.205292",
+    "user_id": "admin-001",
+    "action": "logout",
+    "details": "User admin logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-21T12:50:03.410354",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-21T12:50:17.341825",
+    "user_id": "system",
+    "action": "user_created",
+    "details": "User abc created by admin",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-21T12:50:17.351418",
+    "user_id": "admin-001",
+    "action": "user_created",
+    "details": "Created user abc with role va",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-21T12:50:19.417741",
+    "user_id": "admin-001",
+    "action": "logout",
+    "details": "User admin logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-21T12:50:26.701410",
+    "user_id": "va-002",
+    "action": "login",
+    "details": "User abc logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-21T12:50:54.582406",
+    "user_id": "va-002",
+    "action": "logout",
+    "details": "User abc logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-21T12:51:02.162876",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-21T12:51:23.442273",
+    "user_id": "admin-001",
+    "action": "logout",
+    "details": "User admin logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-21T12:51:28.249061",
+    "user_id": "va-002",
+    "action": "login",
+    "details": "User abc logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-21T13:05:02.614484",
+    "user_id": "va-002",
+    "action": "logout",
+    "details": "User abc logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-21T13:35:22.384700",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-21T13:35:37.805945",
+    "user_id": "admin-001",
+    "action": "logout",
+    "details": "User admin logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-21T13:35:44.072755",
+    "user_id": "va-002",
+    "action": "login",
+    "details": "User abc logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-23T04:30:12.789488",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-23T04:31:59.725579",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-23T04:33:34.124762",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-23T04:34:31.835686",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-23T04:35:20.800042",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-23T04:35:52.454633",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  }
+]

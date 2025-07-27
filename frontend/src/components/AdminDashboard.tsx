@@ -347,7 +347,7 @@ const AdminDashboard: React.FC = () => {
     
     try {
       const token = authService.getToken();
-      const response = await fetch(`https://wdyautomation.shop/api/script/${scriptId}/logs`, {
+      const response = await fetch(`getApiUrl('/script/${scriptId}/logs`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -372,7 +372,7 @@ const AdminDashboard: React.FC = () => {
     
     try {
       const token = authService.getToken();
-      const response = await fetch(`https://wdyautomation.shop/api/script/${selectedScriptId}/download-logs`, {
+      const response = await fetch(`getApiUrl('/script/${selectedScriptId}/download-logs`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

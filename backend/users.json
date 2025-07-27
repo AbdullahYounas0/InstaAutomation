@@ -7,6 +7,36 @@
     "role": "admin",
     "created_at": "2025-07-21T12:09:35.386519",
     "is_active": true,
-    "last_login": "2025-07-27T12:06:24.867179"
+    "last_login": "2025-07-27T15:32:27.597028"
+  },
+  {
+    "id": "va-002",
+    "name": "VA",
+    "username": "va",
+    "password": "$2b$12$j71o6ctOqb1xKzA3vhQIGOlNlzrjZqbwR7I4sEe3mu5oDyk8hgjSW",
+    "role": "va",
+    "created_at": "2025-07-27T15:29:53.960656",
+    "is_active": true,
+    "last_login": "2025-07-27T15:30:01.500973"
+  },
+  {
+    "id": "va-003",
+    "name": "va2",
+    "username": "va2",
+    "password": "$2b$12$i3.hn88m4j8lqaAbbvWJsOLtdc3TFx/9qnIlAZ0KUaZFueEfceZ3C",
+    "role": "va",
+    "created_at": "2025-07-27T15:30:28.711539",
+    "is_active": true,
+    "last_login": "2025-07-27T15:30:45.377645"
+  },
+  {
+    "id": "va-004",
+    "name": "va3",
+    "username": "va3",
+    "password": "$2b$12$Y0sT4yX4Hx0u8NKEYzRWceOY.7MI0JcsRg8HAQPBh87H4PIJLBIzG",
+    "role": "va",
+    "created_at": "2025-07-27T15:30:36.461543",
+    "is_active": true,
+    "last_login": null
   }
 ]

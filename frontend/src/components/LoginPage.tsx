@@ -192,7 +192,7 @@ const LoginPage: React.FC<LoginPageProps> = () => {
 
           {loginType === 'admin' && (
             <div className="admin-hint">
-              <small>Default admin credentials: admin / admin123</small>
+              {/* <small>Default admin credentials: admin / admin123</small> */}
             </div>
           )}
         </form>

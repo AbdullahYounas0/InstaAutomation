@@ -133,12 +133,12 @@ class BrowserCloseDetector {
         }
 
         navigator.sendBeacon(
-          `https://wdyautomation.shop/api/script/${scriptId}/stop`,
+          `getApiUrl('/script/${scriptId}/stop`,
           formData
         );
       } else {
         // Fallback for browsers that don't support sendBeacon
-        fetch(`https://wdyautomation.shop/api/script/${scriptId}/stop`, {
+        fetch(`getApiUrl('/script/${scriptId}/stop`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

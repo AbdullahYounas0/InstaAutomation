@@ -1,7 +1,8 @@
 import axios, { AxiosRequestConfig } from 'axios';
 import { authService } from './authService';
+import { config } from '../config/config';
 
-const API_BASE_URL = 'https://wdyautomation.shop/api';
+const API_BASE_URL = config.API_BASE_URL;
 
 // Create axios instance with default config
 const apiClient = axios.create({

@@ -1,4 +1,6 @@
-const API_BASE_URL = 'https://wdyautomation.shop/api';
+import { config } from '../config/config';
+
+const API_BASE_URL = config.API_BASE_URL;
 
 export interface LoginResponse {
   success: boolean;

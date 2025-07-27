@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { authService } from '../services/authService';
+import { getApiUrl, getApiHeaders } from '../utils/apiUtils';
 import './HomePage.css';
 
 interface Script {
@@ -57,11 +58,8 @@ const HomePage: React.FC = () => {
   const fetchActiveScripts = async () => {
     try {
       setFetchError(null);
-      const token = authService.getToken();
-      const response = await axios.get('https://wdyautomation.shop/api/scripts', {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      const response = await axios.get(getApiUrl('/scripts'), {
+        headers: getApiHeaders()
       });
       setActiveScripts(response.data);
     } catch (error) {
@@ -85,11 +83,8 @@ const HomePage: React.FC = () => {
 
   const fetchScriptStats = async () => {
     try {
-      const token = authService.getToken();
-      const response = await axios.get('https://wdyautomation.shop/api/scripts/stats', {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      const response = await axios.get(getApiUrl('/scripts/stats'), {
+        headers: getApiHeaders()
       });
       setScriptStats(response.data);
     } catch (error) {

@@ -1638,5 +1638,195 @@
     "city": "Local",
     "country": "Local",
     "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:17:21.253296",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:28:33.004086",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:29:00.624624",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:29:30.691451",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:29:53.962088",
+    "user_id": "system",
+    "action": "user_created",
+    "details": "User va created by admin",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:29:53.977480",
+    "user_id": "admin-001",
+    "action": "user_created",
+    "details": "Created user va with role va",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:29:57.713473",
+    "user_id": "admin-001",
+    "action": "logout",
+    "details": "User admin logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:30:01.514015",
+    "user_id": "va-002",
+    "action": "login",
+    "details": "User va logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:30:11.076937",
+    "user_id": "va-002",
+    "action": "logout",
+    "details": "User va logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:30:15.784697",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:30:28.713233",
+    "user_id": "system",
+    "action": "user_created",
+    "details": "User va2 created by admin",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:30:28.727331",
+    "user_id": "admin-001",
+    "action": "user_created",
+    "details": "Created user va2 with role va",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:30:36.462907",
+    "user_id": "system",
+    "action": "user_created",
+    "details": "User va3 created by admin",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:30:36.476599",
+    "user_id": "admin-001",
+    "action": "user_created",
+    "details": "Created user va3 with role va",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:30:40.108302",
+    "user_id": "admin-001",
+    "action": "logout",
+    "details": "User admin logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:30:45.389439",
+    "user_id": "va-003",
+    "action": "login",
+    "details": "User va2 logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:32:19.937317",
+    "user_id": "va-003",
+    "action": "logout",
+    "details": "User va2 logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:32:27.608319",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T15:32:54.462390",
+    "user_id": "admin-001",
+    "action": "logout",
+    "details": "User admin logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
   }
 ]

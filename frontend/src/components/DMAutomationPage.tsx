@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { authService, InstagramAccount } from '../services/authService';
+import { getApiUrl, getApiHeaders, getMultipartHeaders } from '../utils/apiUtils';
 import CaptchaDetector from '../utils/captchaDetector';
 import BrowserCloseDetector from '../utils/browserCloseDetector';
 import './ScriptPage.css';
@@ -35,11 +36,8 @@ const DMAutomationPage: React.FC = () => {
     if (!scriptId) return;
     
     try {
-      const token = authService.getToken();
-      const response = await axios.get(`https://wdyautomation.shop/api/script/${scriptId}/logs`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      const response = await axios.get(getApiUrl(`/script/${scriptId}/logs`), {
+        headers: getApiHeaders()
       });
       
       const newLogs = response.data.logs;
@@ -56,11 +54,8 @@ const DMAutomationPage: React.FC = () => {
     if (!scriptId) return;
     
     try {
-      const token = authService.getToken();
-      const response = await axios.get(`https://wdyautomation.shop/api/script/${scriptId}/status`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      const response = await axios.get(getApiUrl(`/script/${scriptId}/status`), {
+        headers: getApiHeaders()
       });
       const status = response.data.status;
       setScriptStatus(response.data);
@@ -190,12 +185,8 @@ const DMAutomationPage: React.FC = () => {
       setScriptStatus(null);  // Reset status
       setLogs([]);  // Clear previous logs
       
-      const token = authService.getToken();
-      const response = await axios.post('https://wdyautomation.shop/api/dm-automation/start', data, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${token}`
-        },
+      const response = await axios.post(getApiUrl('/dm-automation/start'), data, {
+        headers: getMultipartHeaders(),
       });
       
       setScriptId(response.data.script_id);
@@ -211,13 +202,10 @@ const DMAutomationPage: React.FC = () => {
     if (!scriptId) return;
 
     try {
-      const token = authService.getToken();
-      await axios.post(`https://wdyautomation.shop/api/script/${scriptId}/stop`, {
+      await axios.post(getApiUrl(`/script/${scriptId}/stop`), {
         reason: reason
       }, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: getApiHeaders()
       });
       setIsRunning(false);
       setScriptId(null);
@@ -238,11 +226,8 @@ const DMAutomationPage: React.FC = () => {
     if (!scriptId) return;
 
     try {
-      const token = authService.getToken();
-      const response = await axios.get(`https://wdyautomation.shop/api/script/${scriptId}/download-logs`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        },
+      const response = await axios.get(getApiUrl(`/script/${scriptId}/download-logs`), {
+        headers: getApiHeaders(),
         responseType: 'blob'
       });
 
@@ -266,11 +251,8 @@ const DMAutomationPage: React.FC = () => {
     if (!scriptId) return;
 
     try {
-      const token = authService.getToken();
-      const response = await axios.get(`https://wdyautomation.shop/api/script/${scriptId}/responses`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      const response = await axios.get(getApiUrl(`/script/${scriptId}/responses`), {
+        headers: getApiHeaders()
       });
       
       setResponses(response.data.responses || []);

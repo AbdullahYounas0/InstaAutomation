@@ -13,14 +13,22 @@ import traceback
 import tempfile
 import atexit
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
 from instagram_daily_post import run_daily_post_automation
 from instagram_dm_automation import run_dm_automation
 from instagram_warmup import run_warmup_automation
 from auth import user_manager, token_required, admin_required, log_user_activity
 from instagram_accounts import instagram_accounts_manager
 
+# Load environment variables
+load_dotenv()
+
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
+
+# Set Flask configuration from environment
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
+app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_CONTENT_LENGTH', 104857600))  # 100MB default
 
 # Configuration
 LOGS_FOLDER = 'logs'
@@ -1536,4 +1544,6 @@ def get_all_script_logs():
         return jsonify({'success': False, 'message': 'Internal server error'}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Development mode only - in production, use gunicorn
+    debug_mode = os.environ.get('FLASK_ENV', 'development') == 'development'
+    app.run(debug=debug_mode, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))

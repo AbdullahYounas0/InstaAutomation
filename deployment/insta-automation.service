@@ -1,0 +1,23 @@
+[Unit]
+Description=Instagram Automation Backend
+After=network.target
+
+[Service]
+Type=exec
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/insta-automation/backend
+Environment=PATH=/var/www/insta-automation/venv/bin
+ExecStart=/var/www/insta-automation/venv/bin/gunicorn --config gunicorn.conf.py app:app
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+Restart=always
+RestartSec=10
+
+# Environment file
+EnvironmentFile=/var/www/insta-automation/.env
+
+[Install]
+WantedBy=multi-user.target

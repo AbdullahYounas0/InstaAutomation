@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Instagram Automation Dashboard
 
 A full-stack web application for managing Instagram automation scripts with React frontend and Flask backend.
@@ -158,3 +159,6 @@ For issues and questions:
 2. Review the console output
 3. Verify file formats and requirements
 4. Ensure proper API configuration
+=======
+# instaAutomation
+>>>>>>> 633d021ef513f613f9a52c3bc094c39a8cec434e

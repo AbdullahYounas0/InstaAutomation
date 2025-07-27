@@ -8,7 +8,7 @@ set -e
 echo "🚀 Starting Instagram Automation VPS Deployment..."
 
 # Variables
-PROJECT_DIR="/var/www/instaAutoamtion"
+PROJECT_DIR="/var/www/instaAutomation"
 BACKEND_DIR="$PROJECT_DIR/backend"
 FRONTEND_DIR="$PROJECT_DIR/frontend"
 DOMAIN="wdyautomation.shop"
@@ -45,7 +45,7 @@ apt-get install -y nodejs
 if [ ! -d "$PROJECT_DIR" ]; then
     print_error "Project directory $PROJECT_DIR not found!"
     print_status "Please clone your repository first:"
-    print_status "cd /var/www && git clone https://github.com/yourusername/instaUI2.git instaAutomation"
+    print_status "cd /var/www && git clone https://github.com/AbdullahYounas0/instaAutomation.git instaAutomation"
     exit 1
 fi
 

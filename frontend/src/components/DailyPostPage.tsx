@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { authService, InstagramAccount } from '../services/authService';
 import CaptchaDetector from '../utils/captchaDetector';
-//import BrowserCloseDetector from '../utils/browserCloseDetector';
+import BrowserCloseDetector from '../utils/browserCloseDetector';
 import './ScriptPage.css';
 
 interface ScriptStatus {

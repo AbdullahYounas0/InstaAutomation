@@ -1448,5 +1448,115 @@
     "city": "Local",
     "country": "Local",
     "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T08:33:29.277007",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T08:33:48.254314",
+    "user_id": "admin",
+    "action": "user_deleted",
+    "details": "User Mehak deleted permanently",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T08:33:48.269659",
+    "user_id": "admin-001",
+    "action": "user_deleted",
+    "details": "Deleted user va-003",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T08:33:50.952640",
+    "user_id": "admin",
+    "action": "user_deleted",
+    "details": "User Mehak2 deleted permanently",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T08:33:50.969959",
+    "user_id": "admin-001",
+    "action": "user_deleted",
+    "details": "Deleted user va-004",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T08:34:06.223938",
+    "user_id": "admin-001",
+    "action": "logout",
+    "details": "User admin logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T08:34:15.031876",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T08:34:29.184191",
+    "user_id": "system",
+    "action": "user_created",
+    "details": "User sheezu created by admin",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T08:34:29.196962",
+    "user_id": "admin-001",
+    "action": "user_created",
+    "details": "Created user sheezu with role va",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T08:34:32.202998",
+    "user_id": "admin-001",
+    "action": "logout",
+    "details": "User admin logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T08:34:43.152510",
+    "user_id": "va-002",
+    "action": "login",
+    "details": "User sheezu logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
   }
 ]

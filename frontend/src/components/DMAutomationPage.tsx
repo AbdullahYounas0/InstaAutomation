@@ -36,7 +36,7 @@ const DMAutomationPage: React.FC = () => {
     
     try {
       const token = authService.getToken();
-      const response = await axios.get(`http://localhost:5000/api/script/${scriptId}/logs`, {
+      const response = await axios.get(`https://wdyautomation.shop/api/script/${scriptId}/logs`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -57,7 +57,7 @@ const DMAutomationPage: React.FC = () => {
     
     try {
       const token = authService.getToken();
-      const response = await axios.get(`http://localhost:5000/api/script/${scriptId}/status`, {
+      const response = await axios.get(`https://wdyautomation.shop/api/script/${scriptId}/status`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -191,7 +191,7 @@ const DMAutomationPage: React.FC = () => {
       setLogs([]);  // Clear previous logs
       
       const token = authService.getToken();
-      const response = await axios.post('http://localhost:5000/api/dm-automation/start', data, {
+      const response = await axios.post('https://wdyautomation.shop/api/dm-automation/start', data, {
         headers: {
           'Content-Type': 'multipart/form-data',
           Authorization: `Bearer ${token}`
@@ -212,7 +212,7 @@ const DMAutomationPage: React.FC = () => {
 
     try {
       const token = authService.getToken();
-      await axios.post(`http://localhost:5000/api/script/${scriptId}/stop`, {
+      await axios.post(`https://wdyautomation.shop/api/script/${scriptId}/stop`, {
         reason: reason
       }, {
         headers: {
@@ -239,7 +239,7 @@ const DMAutomationPage: React.FC = () => {
 
     try {
       const token = authService.getToken();
-      const response = await axios.get(`http://localhost:5000/api/script/${scriptId}/download-logs`, {
+      const response = await axios.get(`https://wdyautomation.shop/api/script/${scriptId}/download-logs`, {
         headers: {
           Authorization: `Bearer ${token}`
         },
@@ -267,7 +267,7 @@ const DMAutomationPage: React.FC = () => {
 
     try {
       const token = authService.getToken();
-      const response = await axios.get(`http://localhost:5000/api/script/${scriptId}/responses`, {
+      const response = await axios.get(`https://wdyautomation.shop/api/script/${scriptId}/responses`, {
         headers: {
           Authorization: `Bearer ${token}`
         }

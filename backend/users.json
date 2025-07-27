@@ -7,16 +7,6 @@
     "role": "admin",
     "created_at": "2025-07-21T12:09:35.386519",
     "is_active": true,
-    "last_login": "2025-07-27T08:34:15.018910"
-  },
-  {
-    "id": "va-002",
-    "name": "sheezu",
-    "username": "sheezu",
-    "password": "$2b$12$uSob588PKpU24kPh9sL7JOKz0oTnZpbXOC7UPBN/INvgCFd29//ba",
-    "role": "va",
-    "created_at": "2025-07-27T08:34:29.182944",
-    "is_active": true,
-    "last_login": "2025-07-27T08:34:43.142480"
+    "last_login": "2025-07-27T12:06:24.867179"
   }
 ]

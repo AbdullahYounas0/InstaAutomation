@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { authService, InstagramAccount } from '../services/authService';
 import CaptchaDetector from '../utils/captchaDetector';
-import BrowserCloseDetector from '../utils/browserCloseDetector';
+//import BrowserCloseDetector from '../utils/browserCloseDetector';
 import './ScriptPage.css';
 
 interface ScriptStatus {
@@ -33,7 +33,7 @@ const DailyPostPage: React.FC = () => {
     
     try {
       const token = authService.getToken();
-      const response = await axios.get(`http://localhost:5000/api/script/${scriptId}/logs`, {
+      const response = await axios.get(`https://wdyautomation.shop/api/script/${scriptId}/logs`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -54,7 +54,7 @@ const DailyPostPage: React.FC = () => {
 
     try {
       const token = authService.getToken();
-      const response = await axios.get(`http://localhost:5000/api/script/${scriptId}/status`, {
+      const response = await axios.get(`https://wdyautomation.shop/api/script/${scriptId}/status`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -155,7 +155,7 @@ const DailyPostPage: React.FC = () => {
       setLogs([]);  // Clear previous logs
       
       const token = authService.getToken();
-      const response = await axios.post('http://localhost:5000/api/daily-post/start', data, {
+      const response = await axios.post('https://wdyautomation.shop/api/daily-post/start', data, {
         headers: {
           'Content-Type': 'multipart/form-data',
           Authorization: `Bearer ${token}`
@@ -176,7 +176,7 @@ const DailyPostPage: React.FC = () => {
 
     try {
       const token = authService.getToken();
-      await axios.post(`http://localhost:5000/api/script/${scriptId}/stop`, {
+      await axios.post(`https://wdyautomation.shop/api/script/${scriptId}/stop`, {
         reason: reason
       }, {
         headers: {
@@ -199,7 +199,7 @@ const DailyPostPage: React.FC = () => {
 
     try {
       const token = authService.getToken();
-      const response = await axios.get(`http://localhost:5000/api/script/${scriptId}/download-logs`, {
+      const response = await axios.get(`https://wdyautomation.shop/api/script/${scriptId}/download-logs`, {
         headers: {
           Authorization: `Bearer ${token}`
         },

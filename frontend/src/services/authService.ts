@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = 'https://wdyautomation.shop/api';
 
 export interface LoginResponse {
   success: boolean;

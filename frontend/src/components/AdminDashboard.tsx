@@ -29,6 +29,12 @@ const AdminDashboard: React.FC = () => {
     is_active: true
   });
   
+  // Logs modal state
+  const [showLogsModal, setShowLogsModal] = useState(false);
+  const [selectedScriptId, setSelectedScriptId] = useState<string>('');
+  const [scriptLogContent, setScriptLogContent] = useState<string>('');
+  const [logsLoading, setLogsLoading] = useState(false);
+  
   // Instagram Accounts management state
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const [newAccount, setNewAccount] = useState({
@@ -331,6 +337,62 @@ const AdminDashboard: React.FC = () => {
       notes: account.notes,
       is_active: account.is_active
     });
+  };
+
+  // Logs modal functions
+  const viewScriptLogs = async (scriptId: string) => {
+    setSelectedScriptId(scriptId);
+    setShowLogsModal(true);
+    setLogsLoading(true);
+    
+    try {
+      const token = authService.getToken();
+      const response = await fetch(`https://wdyautomation.shop/api/script/${scriptId}/logs`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setScriptLogContent(data.logs.join('\n'));
+      } else {
+        setScriptLogContent('Failed to load logs');
+      }
+    } catch (error) {
+      console.error('Error loading logs:', error);
+      setScriptLogContent('Error loading logs');
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  const downloadScriptLogs = async () => {
+    if (!selectedScriptId) return;
+    
+    try {
+      const token = authService.getToken();
+      const response = await fetch(`https://wdyautomation.shop/api/script/${selectedScriptId}/download-logs`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `script_${selectedScriptId}_logs.txt`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      console.error('Error downloading logs:', error);
+      alert('Error downloading logs');
+    }
   };
 
   return (
@@ -704,7 +766,7 @@ const AdminDashboard: React.FC = () => {
                           {log.logs_available && (
                             <button
                               className="view-logs-btn"
-                              onClick={() => window.open(`/script/${log.script_id}/logs`, '_blank')}
+                              onClick={() => viewScriptLogs(log.script_id)}
                               title="View detailed logs"
                             >
                               📋 Logs
@@ -1061,6 +1123,45 @@ const AdminDashboard: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Logs Modal */}
+      {showLogsModal && (
+        <div className="modal-overlay">
+          <div className="logs-modal">
+            <div className="modal-header">
+              <h3>Script Logs: {selectedScriptId.substring(0, 8)}...</h3>
+              <div className="modal-actions">
+                <button
+                  className="download-logs-btn"
+                  onClick={downloadScriptLogs}
+                  title="Download logs as text file"
+                >
+                  📥 Download
+                </button>
+                <button
+                  className="modal-close"
+                  onClick={() => setShowLogsModal(false)}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            <div className="modal-body">
+              {logsLoading ? (
+                <div className="logs-loading">
+                  Loading logs...
+                </div>
+              ) : (
+                <div className="logs-container">
+                  <pre className="logs-content">
+                    {scriptLogContent || 'No logs available'}
+                  </pre>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

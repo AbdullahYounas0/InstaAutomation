@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { authService, InstagramAccount } from '../services/authService';
 import CaptchaDetector from '../utils/captchaDetector';
-import BrowserCloseDetector from '../utils/browserCloseDetector';
 import './ScriptPage.css';
 
 const WarmupPage: React.FC = () => {
@@ -35,6 +34,7 @@ const WarmupPage: React.FC = () => {
     }
   });
 
+  // Initial setup effect
   useEffect(() => {
     // Set up CAPTCHA detection
     const captchaDetector = CaptchaDetector.getInstance();
@@ -46,22 +46,22 @@ const WarmupPage: React.FC = () => {
       // The UI just shows the notification and continues monitoring
     });
 
-    // Set up browser close detection
-    const browserCloseDetector = BrowserCloseDetector.getInstance();
-    browserCloseDetector.setupBrowserCloseDetection({
-      scriptId: isRunning ? scriptId : null,
-      onBrowserClose: () => {
-        // Update local state immediately
-        setIsRunning(false);
-        setScriptStatus('stopped');
-      }
-    });
-
-    // Load available accounts
+    // Check for running scripts first, then load accounts
+    checkForRunningScripts();
     loadAvailableAccounts();
+  }, []); // Only run once on mount
 
+  // Separate effect for polling when script is running
+  useEffect(() => {
     let interval: NodeJS.Timeout;
     if (scriptId && isRunning && !isPaused) {
+      // Start fetching logs immediately when script is detected
+      if (scriptId) {
+        fetchLogs();
+        checkScriptStatus();
+      }
+      
+      // Then set up interval for continuous polling
       interval = setInterval(() => {
         fetchLogs();
         checkScriptStatus();
@@ -69,10 +69,8 @@ const WarmupPage: React.FC = () => {
     }
     
     return () => {
-      clearInterval(interval);
-      // Clean up browser close detection when component unmounts or script stops
-      if (!isRunning) {
-        browserCloseDetector.cleanup();
+      if (interval) {
+        clearInterval(interval);
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -89,6 +87,42 @@ const WarmupPage: React.FC = () => {
     }
   };
 
+  const checkForRunningScripts = async () => {
+    try {
+      const token = authService.getToken();
+      const response = await axios.get('https://wdyautomation.shop/api/scripts/running', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      console.log('All running scripts:', response.data.scripts);
+      const runningWarmupScripts = response.data.scripts.filter((s: any) => s.type === 'warmup');
+      console.log('Filtered warmup scripts:', runningWarmupScripts);
+      
+      if (runningWarmupScripts.length > 0) {
+        const script = runningWarmupScripts[0];
+        console.log('Restoring warmup script state:', script);
+        setScriptId(script.id);
+        setIsRunning(true);
+        setScriptStatus('running');
+        // Load the script's configuration if available
+        if (script.config) {
+          setSelectedAccountIds(script.config.selected_account_ids || []);
+        }
+        console.log('Found running warmup script:', script.id);
+        
+        // Immediately fetch logs and status for the restored script
+        setTimeout(() => {
+          fetchLogs();
+          checkScriptStatus();
+        }, 100);
+      } else {
+        console.log('No running warmup scripts found');
+      }
+    } catch (error) {
+      console.error('Error checking running scripts:', error);
+    }
+  };
+
   // Remove the handleCaptchaPause function since backend handles the delay
 
   const fetchLogs = useCallback(async () => {
@@ -96,7 +130,7 @@ const WarmupPage: React.FC = () => {
     
     try {
       const token = authService.getToken();
-      const response = await axios.get(`http://localhost:5000/api/script/${scriptId}/logs`, {
+      const response = await axios.get(`https://wdyautomation.shop/api/script/${scriptId}/logs`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -117,7 +151,7 @@ const WarmupPage: React.FC = () => {
     
     try {
       const token = authService.getToken();
-      const response = await axios.get(`http://localhost:5000/api/script/${scriptId}/status`, {
+      const response = await axios.get(`https://wdyautomation.shop/api/script/${scriptId}/status`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -134,18 +168,7 @@ const WarmupPage: React.FC = () => {
         if (status === 'completed') {
           alert('Warmup script completed successfully!');
         } else if (status === 'error') {
-          const errorMsg = response.data.error || 'Script encountered an error';
           alert('Warmup script encountered an error. Check logs for details.');
-          
-          // Check if error is due to browser closure
-          if (errorMsg.toLowerCase().includes('browser') && (errorMsg.toLowerCase().includes('closed') || errorMsg.toLowerCase().includes('connection'))) {
-            // Auto-reset UI for browser closure
-            setTimeout(() => {
-              setScriptId(null);
-              setScriptStatus('idle');
-              setLogs(prev => [...prev, '🔄 UI reset - Ready for new warmup']);
-            }, 2000);
-          }
         } else if (status === 'stopped') {
           alert('Warmup script was stopped.');
         }
@@ -215,7 +238,7 @@ const WarmupPage: React.FC = () => {
       setIsRunning(true);
       setScriptStatus('running');
       const token = authService.getToken();
-      const response = await axios.post('http://localhost:5000/api/warmup/start', data, {
+      const response = await axios.post('https://wdyautomation.shop/api/warmup/start', data, {
         headers: {
           'Content-Type': 'multipart/form-data',
           Authorization: `Bearer ${token}`
@@ -236,7 +259,7 @@ const WarmupPage: React.FC = () => {
 
     try {
       const token = authService.getToken();
-      await axios.post(`http://localhost:5000/api/script/${scriptId}/stop`, {
+      await axios.post(`https://wdyautomation.shop/api/script/${scriptId}/stop`, {
         reason: reason
       }, {
         headers: {
@@ -246,9 +269,6 @@ const WarmupPage: React.FC = () => {
       setIsRunning(false);
       setScriptId(null);
       setScriptStatus('stopped');
-      
-      // Clean up browser close detection
-      BrowserCloseDetector.getInstance().cleanup();
     } catch (error) {
       console.error('Error stopping script:', error);
     }
@@ -259,7 +279,7 @@ const WarmupPage: React.FC = () => {
 
     try {
       const token = authService.getToken();
-      const response = await axios.get(`http://localhost:5000/api/script/${scriptId}/download-logs`, {
+      const response = await axios.get(`https://wdyautomation.shop/api/script/${scriptId}/download-logs`, {
         headers: {
           Authorization: `Bearer ${token}`
         },

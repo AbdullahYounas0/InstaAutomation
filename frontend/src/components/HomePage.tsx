@@ -58,7 +58,7 @@ const HomePage: React.FC = () => {
     try {
       setFetchError(null);
       const token = authService.getToken();
-      const response = await axios.get('http://localhost:5000/api/scripts', {
+      const response = await axios.get('https://wdyautomation.shop/api/scripts', {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -86,7 +86,7 @@ const HomePage: React.FC = () => {
   const fetchScriptStats = async () => {
     try {
       const token = authService.getToken();
-      const response = await axios.get('http://localhost:5000/api/scripts/stats', {
+      const response = await axios.get('https://wdyautomation.shop/api/scripts/stats', {
         headers: {
           Authorization: `Bearer ${token}`
         }

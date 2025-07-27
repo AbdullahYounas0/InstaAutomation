@@ -1558,5 +1558,85 @@
     "city": "Local",
     "country": "Local",
     "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T11:01:54.407154",
+    "user_id": "va-002",
+    "action": "logout",
+    "details": "User sheezu logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T11:02:03.796541",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T11:02:20.185097",
+    "user_id": "admin",
+    "action": "user_deleted",
+    "details": "User sheezu deleted permanently",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T11:02:20.201621",
+    "user_id": "admin-001",
+    "action": "user_deleted",
+    "details": "Deleted user va-002",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T11:03:23.615368",
+    "user_id": "admin-001",
+    "action": "logout",
+    "details": "User admin logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T11:11:34.497037",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T12:06:19.607000",
+    "user_id": "admin-001",
+    "action": "logout",
+    "details": "User admin logged out",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
+  },
+  {
+    "timestamp": "2025-07-27T12:06:24.880598",
+    "user_id": "admin-001",
+    "action": "login",
+    "details": "User admin logged in",
+    "ip_address": "127.0.0.1",
+    "city": "Local",
+    "country": "Local",
+    "country_code": "LC"
   }
 ]

@@ -8,7 +8,7 @@ set -e
 echo "🚀 Starting Instagram Automation VPS Deployment..."
 
 # Variables
-PROJECT_DIR="/var/www/insta-automation"
+PROJECT_DIR="/var/www/instaAutoamtion"
 BACKEND_DIR="$PROJECT_DIR/backend"
 FRONTEND_DIR="$PROJECT_DIR/frontend"
 DOMAIN="wdyautomation.shop"
@@ -45,7 +45,7 @@ apt-get install -y nodejs
 if [ ! -d "$PROJECT_DIR" ]; then
     print_error "Project directory $PROJECT_DIR not found!"
     print_status "Please clone your repository first:"
-    print_status "cd /var/www && git clone https://github.com/yourusername/instaUI2.git insta-automation"
+    print_status "cd /var/www && git clone https://github.com/yourusername/instaUI2.git instaAutomation"
     exit 1
 fi
 
@@ -85,20 +85,20 @@ npm run build
 
 # Setup Nginx
 print_status "Configuring Nginx..."
-cp $PROJECT_DIR/nginx.conf /etc/nginx/sites-available/insta-automation
+cp $PROJECT_DIR/nginx.conf /etc/nginx/sites-available/instaAutomation
 
 # Remove default site
 rm -f /etc/nginx/sites-enabled/default
 
 # Enable our site
-ln -sf /etc/nginx/sites-available/insta-automation /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/instaAutomation /etc/nginx/sites-enabled/
 
 # Test nginx configuration
 nginx -t
 
 # Create systemd service
 print_status "Creating systemd service..."
-cat > /etc/systemd/system/insta-automation.service << EOF
+cat > /etc/systemd/system/instaAutomation.service << EOF
 [Unit]
 Description=Instagram Automation Flask App
 After=network.target
@@ -124,8 +124,8 @@ chmod -R 755 $PROJECT_DIR
 # Enable and start services
 print_status "Starting services..."
 systemctl daemon-reload
-systemctl enable insta-automation
-systemctl start insta-automation
+systemctl enable instaAutomation
+systemctl start instaAutomation
 systemctl enable nginx
 systemctl restart nginx
 
@@ -144,16 +144,16 @@ systemctl enable certbot.timer
 
 # Check service status
 print_status "Checking service status..."
-systemctl status insta-automation --no-pager
+systemctl status instaAutomation --no-pager
 systemctl status nginx --no-pager
 
 print_status "🎉 Deployment completed!"
 print_status "Your application should now be available at: https://$DOMAIN"
 print_status ""
 print_status "To check logs:"
-print_status "  Backend: sudo journalctl -u insta-automation -f"
+print_status "  Backend: sudo journalctl -u instaAutomation -f"
 print_status "  Nginx: sudo tail -f /var/log/nginx/error.log"
 print_status ""
 print_status "To restart services:"
-print_status "  Backend: sudo systemctl restart insta-automation"
+print_status "  Backend: sudo systemctl restart instaAutomation"
 print_status "  Nginx: sudo systemctl restart nginx"

@@ -57,8 +57,8 @@ def get_allowed_origins():
             'http://127.0.0.1:3000',
             'http://localhost:8080',
             'http://127.0.0.1:8080',
-            'https://instaui.sitetostart.com',
-            'https://www.instaui.sitetostart.com'
+            'https://wdyautomation.shop',
+            'https://www.wdyautomation.shop'
         ]
 
 app.add_middleware(
@@ -1203,5 +1203,5 @@ async def validate_daily_post_files(
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)

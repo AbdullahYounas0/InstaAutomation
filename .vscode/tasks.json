@@ -7,8 +7,35 @@
 			"command": "powershell",
 			"args": [
 				"-Command",
-				"Start-Process powershell -ArgumentList '-Command', 'cd frontend; npm start' -WindowStyle Normal; Start-Process powershell -ArgumentList '-Command', 'cd backend; python app.py' -WindowStyle Normal"
+				"Start-Process powershell -ArgumentList '-Command', 'cd frontend; npm start' -WindowStyle Normal; Start-Process powershell -ArgumentList '-Command', 'cd backend; $env:PORT=5003; python app.py' -WindowStyle Normal"
 			],
+			"group": "build",
+			"problemMatcher": [],
+			"isBackground": true
+		},
+		{
+			"label": "Start Backend Only (FastAPI)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-Command",
+				"$env:PORT=5003; python app.py"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}/backend"
+			},
+			"group": "build",
+			"problemMatcher": [],
+			"isBackground": true
+		},
+		{
+			"label": "Start Frontend Only (React)",
+			"type": "shell",
+			"command": "npm",
+			"args": ["start"],
+			"options": {
+				"cwd": "${workspaceFolder}/frontend"
+			},
 			"group": "build",
 			"problemMatcher": [],
 			"isBackground": true

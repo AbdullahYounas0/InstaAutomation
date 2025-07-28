@@ -1,6 +1,6 @@
 // Configuration settings for the application
 const isDevelopment = process.env.NODE_ENV === 'development';
-const apiUrl = process.env.REACT_APP_API_URL || (isDevelopment ? 'http://localhost:5000' : 'https://wdyautomation.shop');
+const apiUrl = process.env.REACT_APP_API_URL || (isDevelopment ? 'http://localhost:5003' : 'https://wdyautomation.shop');
 
 export const config = {
   API_BASE_URL: `${apiUrl}/api`,

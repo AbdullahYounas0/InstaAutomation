@@ -10,13 +10,34 @@ import os
 import requests
 from datetime import datetime, timedelta
 from functools import wraps
-from flask import request, jsonify, current_app
+from fastapi import HTTPException, Depends, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from typing import Optional, Dict, Any
+import logging
+
+# For compatibility during migration, we'll handle both Flask and FastAPI
+try:
+    from fastapi import HTTPException, Depends, status
+    from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+    FASTAPI_AVAILABLE = True
+except ImportError:
+    FASTAPI_AVAILABLE = False
+    # Fallback for Flask
+    try:
+        from flask import request, jsonify
+    except ImportError:
+        pass
 
 # Configuration
 SECRET_KEY = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
 TOKEN_EXPIRATION_HOURS = 24
 USERS_FILE = 'users.json'
 ACTIVITY_LOG_FILE = 'activity_logs.json'
+
+if FASTAPI_AVAILABLE:
+    security = HTTPBearer()
+
+logger = logging.getLogger(__name__)
 
 class UserManager:
     def __init__(self):
@@ -122,7 +143,7 @@ class UserManager:
         user_id = f"{role}-{len(users) + 1:03d}"
         
         new_user = {
-            'id': user_id,
+            'user_id': user_id,
             'name': name,
             'username': username,
             'password': self.hash_password(password),
@@ -145,23 +166,27 @@ class UserManager:
         users = self.load_users()
         
         for user in users:
-            if user['username'] == username and user['is_active']:
+            if user['username'] == username and user.get('is_active', True):
                 if self.verify_password(password, user['password']):
+                    # Handle migration from 'id' to 'user_id'
+                    user_id = user.get('user_id', user.get('id', f"migrated_{username}"))
+                    
                     # Update last login
                     user['last_login'] = datetime.now().isoformat()
                     self.save_users(users)
                     
                     # Log activity
-                    self.log_activity(user['id'], 'login', f"User {username} logged in")
+                    self.log_activity(user_id, 'login', f"User {username} logged in")
                     
                     # Generate token
-                    token = self.generate_token(user)
+                    token = self.generate_token(user, user_id)
                     
                     return {
                         'success': True,
                         'token': token,
                         'user': {
-                            'id': user['id'],
+                            'user_id': user_id,
+                            'id': user_id,  # For backward compatibility
                             'name': user['name'],
                             'username': user['username'],
                             'role': user['role']
@@ -170,13 +195,18 @@ class UserManager:
         
         return {'success': False, 'message': 'Invalid credentials'}
     
-    def generate_token(self, user):
+    def generate_token(self, user, user_id=None):
         """Generate JWT token"""
+        if user_id is None:
+            user_id = user.get('user_id', user.get('id', f"migrated_{user['username']}"))
+            
         payload = {
-            'user_id': user['id'],
+            'user_id': user_id,
             'username': user['username'],
+            'name': user['name'],
             'role': user['role'],
-            'exp': datetime.utcnow() + timedelta(hours=TOKEN_EXPIRATION_HOURS)
+            'exp': datetime.utcnow() + timedelta(hours=TOKEN_EXPIRATION_HOURS),
+            'iat': datetime.utcnow()
         }
         return jwt.encode(payload, SECRET_KEY, algorithm='HS256')
     
@@ -201,7 +231,7 @@ class UserManager:
         users = self.load_users()
         
         for user in users:
-            if user['id'] == user_id:
+            if user['user_id'] == user_id:
                 # Handle password update
                 if 'password' in updates:
                     updates['password'] = self.hash_password(updates['password'])
@@ -222,7 +252,7 @@ class UserManager:
         users = self.load_users()
         
         for user in users:
-            if user['id'] == user_id:
+            if user['user_id'] == user_id:
                 user['is_active'] = False
                 self.save_users(users)
                 
@@ -240,7 +270,7 @@ class UserManager:
         # Find user to delete
         user_to_delete = None
         for user in users:
-            if user['id'] == user_id:
+            if user['user_id'] == user_id:
                 user_to_delete = user
                 break
         
@@ -254,7 +284,7 @@ class UserManager:
                 return {'success': False, 'message': 'Cannot delete the last admin user'}
         
         # Remove user from list
-        users = [user for user in users if user['id'] != user_id]
+        users = [user for user in users if user['user_id'] != user_id]
         self.save_users(users)
         
         # Log activity
@@ -291,31 +321,32 @@ class UserManager:
             'country_code': 'UN'
         }
     
-    def log_activity(self, user_id, action, details):
+    def log_activity(self, user_id, action, details, ip_address='system'):
         """Log user activity"""
-        logs = self.load_activity_logs()
-        
-        ip_address = request.remote_addr if request else 'system'
-        location = self.get_location_from_ip(ip_address)
-        
-        log_entry = {
-            'timestamp': datetime.now().isoformat(),
-            'user_id': user_id,
-            'action': action,
-            'details': details,
-            'ip_address': ip_address,
-            'city': location['city'],
-            'country': location['country'],
-            'country_code': location['country_code']
-        }
-        
-        logs.append(log_entry)
-        
-        # Keep only last 1000 logs
-        if len(logs) > 1000:
-            logs = logs[-1000:]
-        
-        self.save_activity_logs(logs)
+        try:
+            logs = self.load_activity_logs()
+            location = self.get_location_from_ip(ip_address)
+            
+            log_entry = {
+                'timestamp': datetime.now().isoformat(),
+                'user_id': user_id,
+                'action': action,
+                'details': details,
+                'ip_address': ip_address,
+                'city': location['city'],
+                'country': location['country'],
+                'country_code': location['country_code']
+            }
+            
+            logs.append(log_entry)
+            
+            # Keep only last 1000 logs
+            if len(logs) > 1000:
+                logs = logs[-1000:]
+            
+            self.save_activity_logs(logs)
+        except Exception as e:
+            logger.error(f"Error logging activity: {e}")
     
     def get_activity_logs(self, user_id=None, limit=100):
         """Get activity logs"""
@@ -330,7 +361,50 @@ class UserManager:
 # Initialize user manager
 user_manager = UserManager()
 
-# Decorators for authentication
+# FastAPI dependency functions (only if FastAPI is available)
+if FASTAPI_AVAILABLE:
+    async def verify_token_dependency(credentials: HTTPAuthorizationCredentials = Depends(security)):
+        """FastAPI dependency to verify JWT token"""
+        if not credentials:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token is missing",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        result = user_manager.verify_token(credentials.credentials)
+        
+        if not result['success']:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=result['message'],
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Check if user still exists and is active
+        users = user_manager.load_users()
+        user_id = result['payload']['user_id']
+        user = next((u for u in users if u.get('user_id', u.get('id')) == user_id), None)
+        
+        if not user or not user.get('is_active', True):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User no longer active",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        return result['payload']
+
+    async def admin_required_dependency(current_user: dict = Depends(verify_token_dependency)):
+        """FastAPI dependency to require admin role"""
+        if current_user['role'] != 'admin':
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin access required"
+            )
+        return current_user
+
+# Decorators for authentication (Flask compatibility)
 def token_required(f):
     """Decorator to require valid token"""
     @wraps(f)
@@ -375,7 +449,9 @@ def admin_required(f):
     
     return decorated
 
-def log_user_activity(action, details):
+def log_user_activity(action, details, user_id=None, ip_address='system'):
     """Helper function to log user activity"""
-    if hasattr(request, 'current_user'):
-        user_manager.log_activity(request.current_user['user_id'], action, details)
+    if user_id:
+        user_manager.log_activity(user_id, action, details, ip_address)
+    else:
+        user_manager.log_activity('system', action, details, ip_address)

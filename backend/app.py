@@ -1,76 +1,83 @@
-from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS, cross_origin
-from werkzeug.utils import secure_filename
+"""
+FastAPI Instagram Automation Backend
+Converted from Flask to FastAPI for better performance and async support
+"""
+
+from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, Form, Request, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.security import HTTPBearer
+from pydantic import BaseModel
+from typing import Optional, List, Dict, Any
 import os
-import threading
-import uuid
 import json
+import uuid
 import logging
-import time
 import asyncio
-import pandas as pd
-import traceback
+import threading
+import time as time_module
 import tempfile
 import atexit
+import traceback
+import pandas as pd
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+
+# Import custom modules
+from auth import (
+    user_manager, 
+    verify_token_dependency, 
+    admin_required_dependency,
+    log_user_activity
+)
+from instagram_accounts import instagram_accounts_manager
 from instagram_daily_post import run_daily_post_automation
 from instagram_dm_automation import run_dm_automation
 from instagram_warmup import run_warmup_automation
-from auth import user_manager, token_required, admin_required, log_user_activity
-from instagram_accounts import instagram_accounts_manager
 
 # Load environment variables
 load_dotenv()
 
-app = Flask(__name__)
+# Initialize FastAPI app
+app = FastAPI(
+    title="Instagram Automation API",
+    description="FastAPI backend for Instagram automation scripts",
+    version="2.0.0"
+)
 
-# Enhanced CORS Configuration with Environment Variable Support
+# CORS Configuration
 def get_allowed_origins():
     """Get allowed origins from environment or use defaults"""
     env_origins = os.environ.get('CORS_ORIGINS', '')
     if env_origins:
-        # Split by comma and strip whitespace
         return [origin.strip() for origin in env_origins.split(',') if origin.strip()]
     else:
-        # Default development origins
         return [
-            'http://localhost:3000',  # React development server
-            'http://127.0.0.1:3000',  # Alternative localhost
-            'http://localhost:8080',  # Alternative port
-            'http://127.0.0.1:8080',  # Alternative port
+            'http://localhost:3000',
+            'http://127.0.0.1:3000',
+            'http://localhost:8080',
+            'http://127.0.0.1:8080',
+            'https://instaui.sitetostart.com',
+            'https://www.instaui.sitetostart.com'
         ]
 
-cors_config = {
-    'origins': get_allowed_origins(),
-    'methods': ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    'allow_headers': [
-        'Content-Type',
-        'Authorization',
-        'X-Requested-With',
-        'Accept',
-        'Origin',
-        'Access-Control-Request-Method',
-        'Access-Control-Request-Headers',
-        'Cache-Control',
-        'Pragma'
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_allowed_origins(),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Accept",
+        "Origin",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers",
+        "Cache-Control",
+        "Pragma"
     ],
-    'expose_headers': [
-        'Content-Range',
-        'X-Content-Range',
-        'Authorization',
-        'Content-Disposition'
-    ],
-    'supports_credentials': True,
-    'max_age': int(os.environ.get('CORS_MAX_AGE', 86400))  # 24 hours preflight cache by default
-}
-
-# Apply CORS configuration
-CORS(app, **cors_config)
-
-# Set Flask configuration from environment
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
-app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_CONTENT_LENGTH', 104857600))  # 100MB default
+)
 
 # Configuration
 LOGS_FOLDER = 'logs'
@@ -86,66 +93,36 @@ os.makedirs(LOGS_FOLDER, exist_ok=True)
 # Global variables to track running scripts
 active_scripts = {}
 script_logs = {}
-script_stop_flags = {}  # To handle stopping scripts
-script_temp_files = {}  # Track temporary files per script
+script_stop_flags = {}
+script_temp_files = {}
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# =================== CORS HANDLERS ===================
+# Pydantic models
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
-@app.before_request
-def handle_preflight():
-    """Handle CORS preflight requests"""
-    if request.method == "OPTIONS":
-        response = jsonify({'status': 'OK'})
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        response.headers.add('Access-Control-Allow-Headers', "*")
-        response.headers.add('Access-Control-Allow-Methods', "*")
-        return response
+class TokenRequest(BaseModel):
+    token: str
 
-@app.after_request
-def after_request(response):
-    """Add CORS headers to all responses"""
-    # Get origin from request
-    origin = request.headers.get('Origin')
-    
-    # Check if origin is allowed
-    allowed_origins = cors_config['origins']
-    if origin in allowed_origins or '*' in allowed_origins:
-        response.headers.add('Access-Control-Allow-Origin', origin)
-    
-    response.headers.add('Access-Control-Allow-Headers', 
-                        'Content-Type,Authorization,X-Requested-With,Accept,Origin,Cache-Control,Pragma')
-    response.headers.add('Access-Control-Allow-Methods', 
-                        'GET,POST,PUT,DELETE,OPTIONS,PATCH')
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
-    response.headers.add('Access-Control-Max-Age', '86400')
-    
-    # Add security headers
-    response.headers.add('X-Content-Type-Options', 'nosniff')
-    response.headers.add('X-Frame-Options', 'DENY')
-    response.headers.add('X-XSS-Protection', '1; mode=block')
-    
-    return response
+class UserCreate(BaseModel):
+    name: str
+    username: str
+    password: str
+    role: str = "va"
 
-@app.errorhandler(404)
-def not_found(error):
-    """Handle 404 errors with CORS headers"""
-    response = jsonify({'error': 'Resource not found'})
-    response.status_code = 404
-    return response
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    password: Optional[str] = None
+    is_active: Optional[bool] = None
 
-@app.errorhandler(500)
-def internal_error(error):
-    """Handle 500 errors with CORS headers"""
-    response = jsonify({'error': 'Internal server error'})
-    response.status_code = 500
-    return response
+class StopScriptRequest(BaseModel):
+    reason: str = "Script stopped by user"
 
-# =================== UTILITY FUNCTIONS ===================
-
+# Utility Functions
 def cleanup_temp_files(script_id):
     """Clean up temporary files for a specific script"""
     if script_id in script_temp_files:
@@ -163,10 +140,10 @@ def cleanup_all_temp_files():
     for script_id in list(script_temp_files.keys()):
         cleanup_temp_files(script_id)
 
-# Register cleanup function to run on exit
+# Register cleanup function
 atexit.register(cleanup_all_temp_files)
 
-def save_temp_file(file, script_id, prefix=""):
+def save_temp_file(file: UploadFile, script_id: str, prefix: str = ""):
     """Save uploaded file to temporary location and track it"""
     if script_id not in script_temp_files:
         script_temp_files[script_id] = []
@@ -178,7 +155,8 @@ def save_temp_file(file, script_id, prefix=""):
     try:
         # Save file to temporary location
         with os.fdopen(temp_fd, 'wb') as temp_file:
-            file.save(temp_file)
+            content = file.file.read()
+            temp_file.write(content)
         
         # Track the temporary file
         script_temp_files[script_id].append(temp_path)
@@ -192,16 +170,16 @@ def save_temp_file(file, script_id, prefix=""):
             pass
         raise e
 
-def allowed_file(filename, file_type):
+def allowed_file(filename: str, file_type: str) -> bool:
     """Check if file extension is allowed"""
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS.get(file_type, set())
 
-def generate_script_id():
+def generate_script_id() -> str:
     """Generate unique script ID"""
     return str(uuid.uuid4())
 
-def log_script_message(script_id, message, level="INFO"):
+def log_script_message(script_id: str, message: str, level: str = "INFO"):
     """Log message for specific script"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_entry = f"[{timestamp}] [{level}] {message}"
@@ -215,70 +193,147 @@ def log_script_message(script_id, message, level="INFO"):
     if len(script_logs[script_id]) > 1000:
         script_logs[script_id] = script_logs[script_id][-1000:]
 
-@app.route('/api/health', methods=['GET'])
-def health_check():
+# Health and Debug Endpoints
+@app.get("/api/health")
+async def health_check():
     """Health check endpoint"""
-    return jsonify({"status": "healthy", "timestamp": datetime.now().isoformat()})
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
-@app.route('/api/cors-test', methods=['GET', 'POST', 'OPTIONS'])
-@cross_origin()
-def cors_test():
-    """CORS test endpoint to verify CORS configuration"""
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'CORS preflight OK'})
-    
-    return jsonify({
-        "status": "CORS working",
-        "method": request.method,
-        "origin": request.headers.get('Origin', 'No origin header'),
-        "user_agent": request.headers.get('User-Agent', 'No user agent'),
+@app.get("/api/debug")
+async def debug_endpoint(request: Request):
+    """Debug endpoint to check server status"""
+    return {
+        "status": "Server is running",
         "timestamp": datetime.now().isoformat(),
-        "cors_config": {
-            "allowed_origins": cors_config['origins'],
-            "allowed_methods": cors_config['methods'],
-            "supports_credentials": cors_config['supports_credentials']
+        "method": request.method,
+        "url": str(request.url),
+        "headers": dict(request.headers),
+        "available_endpoints": [
+            "/api/health",
+            "/api/debug", 
+            "/api/cors-test",
+            "/api/auth/login"
+        ]
+    }
+
+@app.options("/api/cors-test")
+@app.get("/api/cors-test")
+@app.post("/api/cors-test")
+async def cors_test(request: Request):
+    """CORS test endpoint to verify CORS configuration"""
+    try:
+        return {
+            "status": "CORS working",
+            "method": request.method,
+            "origin": request.headers.get('Origin', 'No origin header'),
+            "user_agent": request.headers.get('User-Agent', 'No user agent'),
+            "timestamp": datetime.now().isoformat(),
+            "server_info": {
+                "fastapi_version": "0.104.1",
+                "endpoint_working": True
+            },
+            "cors_config": {
+                "allowed_origins": get_allowed_origins(),
+                "allowed_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+                "supports_credentials": True
+            }
         }
-    })
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "status": "error",
+                "error": str(e),
+                "method": request.method,
+                "timestamp": datetime.now().isoformat()
+            }
+        )
 
-# =================== DAILY POST ENDPOINTS ===================
+# Authentication Endpoints
+@app.post("/api/auth/login")
+async def login(login_request: LoginRequest, request: Request):
+    """Login endpoint for both admin and VA users"""
+    try:
+        client_ip = request.client.host if request.client else 'unknown'
+        result = user_manager.authenticate_user(login_request.username, login_request.password)
+        
+        if result['success']:
+            # Log successful login with IP
+            user_id = result['user']['user_id']
+            log_user_activity('login', f"Successful login from {client_ip}", user_id, client_ip)
+            return result
+        else:
+            # Log failed login attempt
+            log_user_activity('failed_login', f"Failed login attempt for {login_request.username} from {client_ip}", ip_address=client_ip)
+            raise HTTPException(status_code=401, detail=result)
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        logger.error(f"Login error: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
-@app.route('/api/daily-post/start', methods=['POST'])
-@token_required
-def start_daily_post():
+@app.post("/api/auth/verify-token")
+async def verify_token(token_request: TokenRequest):
+    """Verify JWT token"""
+    try:
+        result = user_manager.verify_token(token_request.token)
+        if not result['success']:
+            raise HTTPException(status_code=401, detail=result)
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Token verification error: {e}")
+        raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
+
+@app.post("/api/auth/logout")
+async def logout(current_user: dict = Depends(verify_token_dependency)):
+    """Logout endpoint"""
+    try:
+        log_user_activity('logout', f"User {current_user['username']} logged out", current_user['user_id'])
+        return {'success': True, 'message': 'Logged out successfully'}
+    except Exception as e:
+        logger.error(f"Logout error: {e}")
+        raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
+
+# Daily Post Endpoints
+@app.post("/api/daily-post/start")
+async def start_daily_post(
+    background_tasks: BackgroundTasks,
+    account_ids: str = Form(...),
+    media_file: UploadFile = File(...),
+    caption: str = Form(""),
+    auto_generate_caption: bool = Form(True),
+    visual_mode: bool = Form(True),
+    current_user: dict = Depends(verify_token_dependency)
+):
     """Start Instagram Daily Post script"""
     script_id = generate_script_id()
     
     try:
-        # Get form data
-        account_ids_str = request.form.get('account_ids')
-        media_file = request.files.get('media_file')
-        caption = request.form.get('caption', '')
-        auto_generate_caption = request.form.get('auto_generate_caption') == 'true'
-        visual_mode = request.form.get('visual_mode', 'true') == 'true'  # Default to true for Daily Post to show browsers
-        
-        # Validate required data
-        if not account_ids_str or not media_file:
-            return jsonify({"error": "Account IDs and media file are required"}), 400
-        
         # Parse account IDs
         try:
-            account_ids = json.loads(account_ids_str)
-            if not isinstance(account_ids, list) or len(account_ids) == 0:
-                return jsonify({"error": "Invalid account IDs format"}), 400
+            account_ids_list = json.loads(account_ids)
+            if not isinstance(account_ids_list, list) or len(account_ids_list) == 0:
+                raise HTTPException(status_code=400, detail={"error": "Invalid account IDs format"})
         except json.JSONDecodeError:
-            return jsonify({"error": "Invalid account IDs format"}), 400
+            raise HTTPException(status_code=400, detail={"error": "Invalid account IDs format"})
         
         # Get selected accounts from the accounts manager
-        selected_accounts = instagram_accounts_manager.get_accounts_by_ids(account_ids)
+        selected_accounts = instagram_accounts_manager.get_accounts_by_ids(account_ids_list)
         if len(selected_accounts) == 0:
-            return jsonify({"error": "No valid accounts found"}), 400
+            raise HTTPException(status_code=400, detail={"error": "No valid accounts found"})
         
         # Check media file type
         is_image = allowed_file(media_file.filename, 'images')
         is_video = allowed_file(media_file.filename, 'videos')
         
         if not (is_image or is_video):
-            return jsonify({"error": "Invalid media file format. Use supported image/video formats"}), 400
+            raise HTTPException(status_code=400, detail={"error": "Invalid media file format. Use supported image/video formats"})
         
         # Save uploaded media file to temporary location
         media_path = save_temp_file(media_file, script_id, "media")
@@ -292,7 +347,6 @@ def start_daily_post():
             })
         
         # Save accounts to temporary CSV file
-        import pandas as pd
         accounts_df = pd.DataFrame(accounts_data)
         accounts_path = f"temp_accounts_{script_id}.csv"
         accounts_df.to_csv(accounts_path, index=False)
@@ -307,16 +361,16 @@ def start_daily_post():
             "type": "daily_post",
             "status": "running",
             "start_time": datetime.now().isoformat(),
-            "user_id": getattr(request, 'current_user', {}).get('user_id', 'system'),
+            "user_id": current_user.get('user_id', 'system'),
             "config": {
                 "accounts_file": accounts_path,
                 "media_file": media_path,
                 "caption": caption,
-                "concurrent_accounts": len(selected_accounts),  # Use number of selected accounts
+                "concurrent_accounts": len(selected_accounts),
                 "auto_generate_caption": auto_generate_caption,
                 "visual_mode": visual_mode,
                 "is_video": is_video,
-                "selected_account_ids": account_ids
+                "selected_account_ids": account_ids_list
             }
         }
         
@@ -327,22 +381,22 @@ def start_daily_post():
         log_script_message(script_id, f"Media file: {media_file.filename} ({'Video' if is_video else 'Image'})")
         log_script_message(script_id, f"Visual mode: {'Enabled' if visual_mode else 'Disabled'}")
         
-        # Start the script in a separate thread
-        thread = threading.Thread(target=run_daily_post_script, args=(script_id,))
-        thread.daemon = True
-        thread.start()
+        # Start the script in background
+        background_tasks.add_task(run_daily_post_script, script_id)
         
-        return jsonify({
+        return {
             "script_id": script_id,
             "status": "started",
             "message": "Daily post script initiated successfully"
-        })
+        }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error starting daily post script: {e}")
-        return jsonify({"error": str(e)}), 500
+        raise HTTPException(status_code=500, detail={"error": str(e)})
 
-def run_daily_post_script(script_id):
+async def run_daily_post_script(script_id: str):
     """Run the actual daily post script"""
     try:
         config = active_scripts[script_id]["config"]
@@ -357,82 +411,67 @@ def run_daily_post_script(script_id):
         
         log_script_message(script_id, "Starting Instagram Daily Post automation...")
         
-        # Run the async automation function
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Run the automation function
+        success = await run_daily_post_automation(
+            script_id=script_id,
+            accounts_file=config['accounts_file'],
+            media_file=config['media_file'],
+            concurrent_accounts=config['concurrent_accounts'],
+            caption=config.get('caption', ''),
+            auto_generate_caption=config.get('auto_generate_caption', True),
+            visual_mode=config.get('visual_mode', False),
+            log_callback=log_callback,
+            stop_callback=stop_callback
+        )
         
-        try:
-            success = loop.run_until_complete(
-                run_daily_post_automation(
-                    script_id=script_id,
-                    accounts_file=config['accounts_file'],
-                    media_file=config['media_file'],
-                    concurrent_accounts=config['concurrent_accounts'],
-                    caption=config.get('caption', ''),
-                    auto_generate_caption=config.get('auto_generate_caption', True),
-                    visual_mode=config.get('visual_mode', False),
-                    log_callback=log_callback,
-                    stop_callback=stop_callback
-                )
-            )
-            
-            if success:
-                active_scripts[script_id]["status"] = "completed"
-                active_scripts[script_id]["end_time"] = datetime.now().isoformat()
-                log_script_message(script_id, "Daily post script completed successfully!", "SUCCESS")
-            else:
-                active_scripts[script_id]["status"] = "error"
-                active_scripts[script_id]["end_time"] = datetime.now().isoformat()
-                active_scripts[script_id]["error"] = "Script execution failed"
-                log_script_message(script_id, "Daily post script failed", "ERROR")
-                
-        finally:
-            loop.close()
+        if success:
+            active_scripts[script_id]["status"] = "completed"
+            active_scripts[script_id]["end_time"] = datetime.now().isoformat()
+            log_script_message(script_id, "Daily post script completed successfully!", "SUCCESS")
+        else:
+            active_scripts[script_id]["status"] = "error"
+            active_scripts[script_id]["end_time"] = datetime.now().isoformat()
+            active_scripts[script_id]["error"] = "Script execution failed"
+            log_script_message(script_id, "Daily post script failed", "ERROR")
         
     except Exception as e:
         active_scripts[script_id]["status"] = "error"
         active_scripts[script_id]["end_time"] = datetime.now().isoformat()
         active_scripts[script_id]["error"] = str(e)
         log_script_message(script_id, f"Script error: {e}", "ERROR")
-        import traceback
         traceback.print_exc()
     finally:
         # Clean up temporary files
         cleanup_temp_files(script_id)
 
-# =================== DM AUTOMATION ENDPOINTS ===================
-
-@app.route('/api/dm-automation/start', methods=['POST'])
-@token_required
-def start_dm_automation():
+# DM Automation Endpoints
+@app.post("/api/dm-automation/start")
+async def start_dm_automation(
+    background_tasks: BackgroundTasks,
+    account_ids: str = Form(...),
+    target_file: Optional[UploadFile] = File(None),
+    dm_prompt_file: Optional[UploadFile] = File(None),
+    custom_prompt: str = Form(""),
+    dms_per_account: int = Form(30),
+    visual_mode: bool = Form(False),
+    current_user: dict = Depends(verify_token_dependency)
+):
     """Start Instagram DM Automation script"""
     script_id = generate_script_id()
     
     try:
-        # Get form data
-        account_ids_str = request.form.get('account_ids')
-        target_file = request.files.get('target_file')
-        dm_prompt_file = request.files.get('dm_prompt_file')
-        custom_prompt = request.form.get('custom_prompt', '')
-        dms_per_account = int(request.form.get('dms_per_account', 30))
-        visual_mode = request.form.get('visual_mode', 'false') == 'true'  # New parameter for showing browsers
-        
-        # Validate required data
-        if not account_ids_str:
-            return jsonify({"error": "Account IDs are required"}), 400
-        
         # Parse account IDs
         try:
-            account_ids = json.loads(account_ids_str)
-            if not isinstance(account_ids, list) or len(account_ids) == 0:
-                return jsonify({"error": "Invalid account IDs format"}), 400
+            account_ids_list = json.loads(account_ids)
+            if not isinstance(account_ids_list, list) or len(account_ids_list) == 0:
+                raise HTTPException(status_code=400, detail={"error": "Invalid account IDs format"})
         except json.JSONDecodeError:
-            return jsonify({"error": "Invalid account IDs format"}), 400
+            raise HTTPException(status_code=400, detail={"error": "Invalid account IDs format"})
         
         # Get selected accounts from the accounts manager
-        selected_accounts = instagram_accounts_manager.get_accounts_by_ids(account_ids)
+        selected_accounts = instagram_accounts_manager.get_accounts_by_ids(account_ids_list)
         if len(selected_accounts) == 0:
-            return jsonify({"error": "No valid accounts found"}), 400
+            raise HTTPException(status_code=400, detail={"error": "No valid accounts found"})
         
         # Create temporary accounts file with selected accounts
         accounts_data = []
@@ -443,7 +482,6 @@ def start_dm_automation():
             })
         
         # Save accounts to temporary CSV file
-        import pandas as pd
         accounts_df = pd.DataFrame(accounts_data)
         accounts_path = f"temp_dm_accounts_{script_id}.csv"
         accounts_df.to_csv(accounts_path, index=False)
@@ -466,7 +504,7 @@ def start_dm_automation():
             "type": "dm_automation",
             "status": "running",
             "start_time": datetime.now().isoformat(),
-            "user_id": getattr(request, 'current_user', {}).get('user_id', 'system'),
+            "user_id": current_user.get('user_id', 'system'),
             "config": {
                 "accounts_file": accounts_path,
                 "target_file": target_path,
@@ -474,33 +512,33 @@ def start_dm_automation():
                 "custom_prompt": custom_prompt,
                 "dms_per_account": dms_per_account,
                 "visual_mode": visual_mode,
-                "selected_account_ids": account_ids
+                "selected_account_ids": account_ids_list
             }
         }
         
         # Initialize stop flag
         script_stop_flags[script_id] = False
         
-        log_script_message(script_id, f"DM Automation script started with dynamic account count")
+        log_script_message(script_id, f"DM Automation script started with {len(selected_accounts)} accounts")
         log_script_message(script_id, f"Target: {dms_per_account} DMs per account")
         log_script_message(script_id, f"Visual mode: {'Enabled' if visual_mode else 'Disabled'}")
         
-        # Start the script in a separate thread
-        thread = threading.Thread(target=run_dm_automation_script, args=(script_id,))
-        thread.daemon = True
-        thread.start()
+        # Start the script in background
+        background_tasks.add_task(run_dm_automation_script, script_id)
         
-        return jsonify({
+        return {
             "script_id": script_id,
             "status": "started",
             "message": "DM automation script initiated successfully"
-        })
+        }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error starting DM automation script: {e}")
-        return jsonify({"error": str(e)}), 500
+        raise HTTPException(status_code=500, detail={"error": str(e)})
 
-def run_dm_automation_script(script_id):
+async def run_dm_automation_script(script_id: str):
     """Run the actual DM automation script"""
     try:
         config = active_scripts[script_id]["config"]
@@ -518,94 +556,76 @@ def run_dm_automation_script(script_id):
         
         log_script_message(script_id, "Starting Instagram DM automation...")
         
-        # Run the async automation function
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Run the automation function
+        success = await run_dm_automation(
+            script_id=script_id,
+            accounts_file=config['accounts_file'],
+            target_file=config.get('target_file'),
+            prompt_file=config.get('prompt_file'),
+            custom_prompt=config.get('custom_prompt', ''),
+            dms_per_account=config.get('dms_per_account', 30),
+            visual_mode=config.get('visual_mode', False),
+            log_callback=log_callback,
+            stop_callback=stop_callback
+        )
         
-        try:
-            success = loop.run_until_complete(
-                run_dm_automation(
-                    script_id=script_id,
-                    accounts_file=config['accounts_file'],
-                    target_file=config.get('target_file'),
-                    prompt_file=config.get('prompt_file'),
-                    custom_prompt=config.get('custom_prompt', ''),
-                    dms_per_account=config.get('dms_per_account', 30),
-                    visual_mode=config.get('visual_mode', False),
-                    log_callback=log_callback,
-                    stop_callback=stop_callback
-                )
-            )
-            
-            if success:
-                active_scripts[script_id]["status"] = "completed"
-                active_scripts[script_id]["end_time"] = datetime.now().isoformat()
-                log_script_message(script_id, "DM automation completed successfully!", "SUCCESS")
-            else:
-                active_scripts[script_id]["status"] = "error"
-                active_scripts[script_id]["end_time"] = datetime.now().isoformat()
-                active_scripts[script_id]["error"] = "Script execution failed"
-                log_script_message(script_id, "DM automation script failed", "ERROR")
-                
-        finally:
-            loop.close()
+        if success:
+            active_scripts[script_id]["status"] = "completed"
+            active_scripts[script_id]["end_time"] = datetime.now().isoformat()
+            log_script_message(script_id, "DM automation completed successfully!", "SUCCESS")
+        else:
+            active_scripts[script_id]["status"] = "error"
+            active_scripts[script_id]["end_time"] = datetime.now().isoformat()
+            active_scripts[script_id]["error"] = "Script execution failed"
+            log_script_message(script_id, "DM automation script failed", "ERROR")
         
     except Exception as e:
         active_scripts[script_id]["status"] = "error"
         active_scripts[script_id]["end_time"] = datetime.now().isoformat()
         active_scripts[script_id]["error"] = str(e)
         log_script_message(script_id, f"Script error: {e}", "ERROR")
-        import traceback
         traceback.print_exc()
     finally:
         # Clean up temporary files
         cleanup_temp_files(script_id)
 
-# =================== WARMUP ENDPOINTS ===================
-
-@app.route('/api/warmup/start', methods=['POST'])
-@token_required
-def start_warmup():
+# Warmup Endpoints
+@app.post("/api/warmup/start")
+async def start_warmup(
+    background_tasks: BackgroundTasks,
+    account_ids: str = Form(...),
+    warmup_duration_min: int = Form(10),
+    warmup_duration_max: int = Form(400),
+    scheduler_delay: int = Form(0),
+    visual_mode: bool = Form(False),
+    feed_scroll: bool = Form(True),
+    watch_reels: bool = Form(True),
+    like_reels: bool = Form(True),
+    like_posts: bool = Form(True),
+    explore_page: bool = Form(True),
+    random_visits: bool = Form(True),
+    activity_delay_min: int = Form(3),
+    activity_delay_max: int = Form(7),
+    scroll_attempts_min: int = Form(5),
+    scroll_attempts_max: int = Form(10),
+    current_user: dict = Depends(verify_token_dependency)
+):
     """Start Instagram Account Warmup script"""
     script_id = generate_script_id()
     
     try:
-        # Get form data
-        account_ids_str = request.form.get('account_ids')
-        warmup_duration_min = int(request.form.get('warmup_duration_min', 10))
-        warmup_duration_max = int(request.form.get('warmup_duration_max', 400))
-        scheduler_delay = int(request.form.get('scheduler_delay', 0))
-        visual_mode = request.form.get('visual_mode', 'false') == 'true'  # New parameter for showing browsers
-        
-        # Activity settings
-        feed_scroll = request.form.get('feed_scroll') == 'true'
-        watch_reels = request.form.get('watch_reels') == 'true'
-        like_reels = request.form.get('like_reels') == 'true'
-        like_posts = request.form.get('like_posts') == 'true'
-        explore_page = request.form.get('explore_page') == 'true'
-        random_visits = request.form.get('random_visits') == 'true'
-        
-        activity_delay_min = int(request.form.get('activity_delay_min', 3))
-        activity_delay_max = int(request.form.get('activity_delay_max', 7))
-        scroll_attempts_min = int(request.form.get('scroll_attempts_min', 5))
-        scroll_attempts_max = int(request.form.get('scroll_attempts_max', 10))
-        
-        # Validate required data
-        if not account_ids_str:
-            return jsonify({"error": "Account IDs are required"}), 400
-        
         # Parse account IDs
         try:
-            account_ids = json.loads(account_ids_str)
-            if not isinstance(account_ids, list) or len(account_ids) == 0:
-                return jsonify({"error": "Invalid account IDs format"}), 400
+            account_ids_list = json.loads(account_ids)
+            if not isinstance(account_ids_list, list) or len(account_ids_list) == 0:
+                raise HTTPException(status_code=400, detail={"error": "Invalid account IDs format"})
         except json.JSONDecodeError:
-            return jsonify({"error": "Invalid account IDs format"}), 400
+            raise HTTPException(status_code=400, detail={"error": "Invalid account IDs format"})
         
         # Get selected accounts from the accounts manager
-        selected_accounts = instagram_accounts_manager.get_accounts_by_ids(account_ids)
+        selected_accounts = instagram_accounts_manager.get_accounts_by_ids(account_ids_list)
         if len(selected_accounts) == 0:
-            return jsonify({"error": "No valid accounts found"}), 400
+            raise HTTPException(status_code=400, detail={"error": "No valid accounts found"})
         
         # Create temporary accounts file with selected accounts
         accounts_data = []
@@ -616,7 +636,6 @@ def start_warmup():
             })
         
         # Save accounts to temporary CSV file
-        import pandas as pd
         accounts_df = pd.DataFrame(accounts_data)
         accounts_path = f"temp_warmup_accounts_{script_id}.csv"
         accounts_df.to_csv(accounts_path, index=False)
@@ -631,14 +650,14 @@ def start_warmup():
             "type": "warmup",
             "status": "running",
             "start_time": datetime.now().isoformat(),
-            "user_id": getattr(request, 'current_user', {}).get('user_id', 'system'),
+            "user_id": current_user.get('user_id', 'system'),
             "config": {
                 "accounts_file": accounts_path,
                 "warmup_duration_min": warmup_duration_min,
                 "warmup_duration_max": warmup_duration_max,
                 "scheduler_delay": scheduler_delay,
                 "visual_mode": visual_mode,
-                "selected_account_ids": account_ids,
+                "selected_account_ids": account_ids_list,
                 "activities": {
                     "feed_scroll": feed_scroll,
                     "watch_reels": watch_reels,
@@ -666,26 +685,23 @@ def start_warmup():
         log_script_message(script_id, f"Dynamic account processing: All selected accounts will be used")
         log_script_message(script_id, f"Visual mode: {'Enabled' if visual_mode else 'Disabled'}")
         
-        # Start the script in a separate thread (with scheduler delay if specified)
-        thread = threading.Thread(target=run_warmup_script, args=(script_id,))
-        thread.daemon = True
-        thread.start()
+        # Start the script in background
+        background_tasks.add_task(run_warmup_script, script_id)
         
-        return jsonify({
+        return {
             "script_id": script_id,
             "status": "started",
             "message": "Account warmup script initiated successfully"
-        })
+        }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error starting warmup script: {e}")
-        return jsonify({"error": str(e)}), 500
+        raise HTTPException(status_code=500, detail={"error": str(e)})
 
-def run_warmup_script(script_id):
+async def run_warmup_script(script_id: str):
     """Run the actual warmup script with recurring functionality"""
-    import random
-    import time as time_module
-    
     try:
         config = active_scripts[script_id]["config"]
         
@@ -727,6 +743,7 @@ def run_warmup_script(script_id):
             session_start_time = datetime.now()
             
             # Generate random duration for this session
+            import random
             random_duration = random.randint(duration_min, duration_max)
             
             log_script_message(script_id, f"")
@@ -734,42 +751,33 @@ def run_warmup_script(script_id):
             log_script_message(script_id, f"📊 Session duration: {random_duration} minutes")
             log_script_message(script_id, f"⏰ Session started at: {session_start_time.strftime('%Y-%m-%d %H:%M:%S')}")
             
-            # Run the async automation function for this session
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            # Run the automation function for this session
+            success = await run_warmup_automation(
+                script_id=script_id,
+                accounts_file=config['accounts_file'],
+                warmup_duration=random_duration,
+                activities=config['activities'],
+                timing=config['timing'],
+                visual_mode=config.get('visual_mode', False),
+                log_callback=log_callback,
+                stop_callback=stop_callback
+            )
             
-            try:
-                success = loop.run_until_complete(
-                    run_warmup_automation(
-                        script_id=script_id,
-                        accounts_file=config['accounts_file'],
-                        warmup_duration=random_duration,
-                        activities=config['activities'],
-                        timing=config['timing'],
-                        visual_mode=config.get('visual_mode', False),
-                        log_callback=log_callback,
-                        stop_callback=stop_callback
-                    )
-                )
-                
-                session_end_time = datetime.now()
-                session_duration = (session_end_time - session_start_time).total_seconds() / 60
-                
-                if success:
-                    log_script_message(script_id, f"✅ Session #{session_count} completed successfully!", "SUCCESS")
-                    log_script_message(script_id, f"📈 Actual session duration: {session_duration:.1f} minutes")
+            session_end_time = datetime.now()
+            session_duration = (session_end_time - session_start_time).total_seconds() / 60
+            
+            if success:
+                log_script_message(script_id, f"✅ Session #{session_count} completed successfully!", "SUCCESS")
+                log_script_message(script_id, f"📈 Actual session duration: {session_duration:.1f} minutes")
+            else:
+                log_script_message(script_id, f"❌ Session #{session_count} failed", "ERROR")
+                if not is_recurring:
+                    active_scripts[script_id]["status"] = "error"
+                    active_scripts[script_id]["end_time"] = datetime.now().isoformat()
+                    active_scripts[script_id]["error"] = "Session execution failed"
+                    return
                 else:
-                    log_script_message(script_id, f"❌ Session #{session_count} failed", "ERROR")
-                    if not is_recurring:
-                        active_scripts[script_id]["status"] = "error"
-                        active_scripts[script_id]["end_time"] = datetime.now().isoformat()
-                        active_scripts[script_id]["error"] = "Session execution failed"
-                        return
-                    else:
-                        log_script_message(script_id, f"🔄 Continuing to next session despite failure...", "WARNING")
-                        
-            finally:
-                loop.close()
+                    log_script_message(script_id, f"🔄 Continuing to next session despite failure...", "WARNING")
             
             # Check if this is a single run (no recurring)
             if not is_recurring:
@@ -804,7 +812,7 @@ def run_warmup_script(script_id):
                         remaining_hours = remaining_wait / 3600
                         log_script_message(script_id, f"⏳ Still waiting... {remaining_hours:.1f} hours remaining until next session")
                     
-                    time_module.sleep(60)  # Check every minute
+                    await asyncio.sleep(60)  # Check every minute
                 
                 log_script_message(script_id, f"✅ Delay period completed. Preparing for next session...")
         
@@ -818,14 +826,12 @@ def run_warmup_script(script_id):
         # Clean up temporary files
         cleanup_temp_files(script_id)
 
-# =================== GENERAL ENDPOINTS ===================
-
-@app.route('/api/script/<script_id>/status', methods=['GET'])
-@token_required
-def get_script_status(script_id):
+# Script Management Endpoints
+@app.get("/api/script/{script_id}/status")
+async def get_script_status(script_id: str, current_user: dict = Depends(verify_token_dependency)):
     """Get status of a running script"""
     if script_id not in active_scripts:
-        return jsonify({"error": "Script not found"}), 404
+        raise HTTPException(status_code=404, detail={"error": "Script not found"})
     
     script_data = active_scripts[script_id].copy()
     
@@ -833,51 +839,50 @@ def get_script_status(script_id):
     auto_stop = script_data.get("status") in ["completed", "error", "stopped"]
     script_data["auto_stop"] = auto_stop
     
-    return jsonify(script_data)
+    return script_data
 
-@app.route('/api/script/<script_id>/logs', methods=['GET'])
-@token_required
-def get_script_logs(script_id):
+@app.get("/api/script/{script_id}/logs")
+async def get_script_logs(script_id: str, current_user: dict = Depends(verify_token_dependency)):
     """Get logs for a specific script"""
     logs = script_logs.get(script_id, [])
-    return jsonify({"logs": logs})
+    return {"logs": logs}
 
-@app.route('/api/script/<script_id>/stop', methods=['POST'])
-@token_required
-def stop_script(script_id):
+@app.post("/api/script/{script_id}/stop")
+async def stop_script(
+    script_id: str, 
+    stop_request: StopScriptRequest,
+    current_user: dict = Depends(verify_token_dependency)
+):
     """Stop a running script"""
     if script_id not in active_scripts:
-        return jsonify({"error": "Script not found"}), 404
+        raise HTTPException(status_code=404, detail={"error": "Script not found"})
     
     if active_scripts[script_id]["status"] == "running":
-        # Get the reason from request data
-        data = request.get_json() if request.is_json else {}
-        reason = data.get('reason', 'Script stopped by user')
-        
-        # Handle form data as well (for sendBeacon requests)
-        if not request.is_json and request.form:
-            reason = request.form.get('reason', 'Script stopped by user')
-        
         # Set stop flag for the script
         script_stop_flags[script_id] = True
         active_scripts[script_id]["status"] = "stopped"
         active_scripts[script_id]["end_time"] = datetime.now().isoformat()
-        active_scripts[script_id]["stop_reason"] = reason
+        active_scripts[script_id]["stop_reason"] = stop_request.reason
         
         # Log the stop reason
-        log_script_message(script_id, reason, "WARNING")
+        log_script_message(script_id, stop_request.reason, "WARNING")
         
         # Clean up temporary files when script is stopped
         cleanup_temp_files(script_id)
-        return jsonify({"status": "stopped", "message": "Script stopped successfully", "reason": reason})
+        return {
+            "status": "stopped", 
+            "message": "Script stopped successfully", 
+            "reason": stop_request.reason
+        }
     
-    return jsonify({"status": active_scripts[script_id]["status"], "message": "Script not running"})
+    return {
+        "status": active_scripts[script_id]["status"], 
+        "message": "Script not running"
+    }
 
-@app.route('/api/scripts', methods=['GET'])
-@token_required
-def list_scripts():
+@app.get("/api/scripts")
+async def list_scripts(current_user: dict = Depends(verify_token_dependency)):
     """List all scripts with their status - filtered by user or all for admin"""
-    current_user = getattr(request, 'current_user', {})
     user_id = current_user.get('user_id', 'system')
     user_role = current_user.get('role', 'va')
     
@@ -891,13 +896,11 @@ def list_scripts():
             if script_data.get('user_id') == user_id
         }
     
-    return jsonify(filtered_scripts)
+    return filtered_scripts
 
-@app.route('/api/scripts/stats', methods=['GET'])
-@token_required
-def get_script_stats():
+@app.get("/api/scripts/stats")
+async def get_script_stats(current_user: dict = Depends(verify_token_dependency)):
     """Get script statistics for the current user or all users for admin"""
-    current_user = getattr(request, 'current_user', {})
     user_id = current_user.get('user_id', 'system')
     user_role = current_user.get('role', 'va')
     
@@ -934,7 +937,7 @@ def get_script_stats():
         script_types[script_type]['total'] += 1
         script_types[script_type][script_data['status']] += 1
     
-    return jsonify({
+    return {
         'user_id': user_id,
         'user_role': user_role,
         'total_scripts': total_scripts,
@@ -948,13 +951,13 @@ def get_script_stats():
             key=lambda x: x['start_time'],
             reverse=True
         )[:10]  # Last 10 scripts
-    })
+    }
 
-@app.route('/api/script/<script_id>/download-logs', methods=['GET'])
-def download_script_logs(script_id):
+@app.get("/api/script/{script_id}/download-logs")
+async def download_script_logs(script_id: str):
     """Download logs for a specific script as a text file"""
     if script_id not in script_logs:
-        return jsonify({"error": "Script logs not found"}), 404
+        raise HTTPException(status_code=404, detail={"error": "Script logs not found"})
     
     logs = script_logs.get(script_id, [])
     log_content = "\n".join(logs)
@@ -966,184 +969,29 @@ def download_script_logs(script_id):
     with open(log_path, 'w', encoding='utf-8') as f:
         f.write(log_content)
     
-    return send_file(log_path, as_attachment=True, download_name=log_filename)
+    return FileResponse(log_path, filename=log_filename, media_type='text/plain')
 
-@app.route('/api/script/<script_id>/clear-logs', methods=['POST'])
-def clear_script_logs(script_id):
+@app.post("/api/script/{script_id}/clear-logs")
+async def clear_script_logs(script_id: str):
     """Clear logs for a specific script"""
     if script_id not in script_logs:
-        return jsonify({"error": "Script logs not found"}), 404
+        raise HTTPException(status_code=404, detail={"error": "Script logs not found"})
     
     script_logs[script_id] = []
-    return jsonify({"message": "Logs cleared successfully"})
+    return {"message": "Logs cleared successfully"}
 
-@app.route('/api/daily-post/validate', methods=['POST'])
-def validate_daily_post_files():
-    """Validate uploaded files before starting the script"""
-    try:
-        accounts_file = request.files.get('accounts_file')
-        media_file = request.files.get('media_file')
-        
-        errors = []
-        
-        # Validate accounts file
-        if not accounts_file:
-            errors.append("Accounts file is required")
-        elif not allowed_file(accounts_file.filename, 'files'):
-            errors.append("Invalid accounts file format. Use CSV or Excel")
-        else:
-            # Try to read the file to validate structure
-            try:
-                if accounts_file.filename.endswith('.csv'):
-                    df = pd.read_csv(accounts_file)
-                else:
-                    df = pd.read_excel(accounts_file)
-                
-                df.columns = df.columns.str.strip().str.title()
-                required_columns = ["Username", "Password"]
-                missing_columns = [col for col in required_columns if col not in df.columns]
-                if missing_columns:
-                    errors.append(f"Missing columns in accounts file: {missing_columns}")
-                elif df.empty:
-                    errors.append("Accounts file is empty")
-                else:
-                    valid_accounts = 0
-                    for i in range(len(df)):
-                        username = df.loc[i, "Username"]
-                        password = df.loc[i, "Password"]
-                        if pd.notna(username) and pd.notna(password):
-                            valid_accounts += 1
-                    if valid_accounts == 0:
-                        errors.append("No valid accounts found in file")
-            except Exception as e:
-                errors.append(f"Error reading accounts file: {str(e)}")
-        
-        # Validate media file
-        if not media_file:
-            errors.append("Media file is required")
-        else:
-            is_image = allowed_file(media_file.filename, 'images')
-            is_video = allowed_file(media_file.filename, 'videos')
-            if not (is_image or is_video):
-                errors.append("Invalid media file format. Use supported image/video formats")
-        
-        if errors:
-            return jsonify({"valid": False, "errors": errors}), 400
-        
-        return jsonify({
-            "valid": True, 
-            "message": "Files validated successfully",
-            "accounts_count": valid_accounts if 'valid_accounts' in locals() else 0,
-            "media_type": "video" if is_video else "image"
-        })
-        
-    except Exception as e:
-        return jsonify({"valid": False, "errors": [str(e)]}), 500
-
-@app.route('/api/dm-automation/validate', methods=['POST'])
-def validate_dm_automation_files():
-    """Validate uploaded files before starting the DM automation script"""
-    try:
-        accounts_file = request.files.get('accounts_file')
-        target_file = request.files.get('target_file')
-        dm_prompt_file = request.files.get('dm_prompt_file')
-        
-        errors = []
-        warnings = []
-        
-        # Validate accounts file (required)
-        if not accounts_file:
-            errors.append("Bot accounts file is required")
-        elif not allowed_file(accounts_file.filename, 'files'):
-            errors.append("Invalid accounts file format. Use CSV or Excel")
-        else:
-            # Try to read the file to validate structure
-            try:
-                if accounts_file.filename.endswith('.csv'):
-                    df = pd.read_csv(accounts_file)
-                else:
-                    df = pd.read_excel(accounts_file)
-                
-                df.columns = df.columns.str.strip().str.title()
-                required_columns = ["Username", "Password"]
-                missing_columns = [col for col in required_columns if col not in df.columns]
-                if missing_columns:
-                    errors.append(f"Missing columns in bot accounts file: {missing_columns}")
-                elif df.empty:
-                    errors.append("Bot accounts file is empty")
-                else:
-                    valid_accounts = 0
-                    for i in range(len(df)):
-                        username = df.loc[i, "Username"]
-                        password = df.loc[i, "Password"]
-                        if pd.notna(username) and pd.notna(password):
-                            valid_accounts += 1
-                    if valid_accounts == 0:
-                        errors.append("No valid bot accounts found in file")
-            except Exception as e:
-                errors.append(f"Error reading bot accounts file: {str(e)}")
-        
-        # Validate target file (optional)
-        target_accounts = 0
-        if target_file:
-            if not allowed_file(target_file.filename, 'files'):
-                warnings.append("Invalid target file format. Use CSV or Excel")
-            else:
-                try:
-                    if target_file.filename.endswith('.csv'):
-                        target_df = pd.read_csv(target_file)
-                    else:
-                        target_df = pd.read_excel(target_file)
-                    
-                    target_accounts = len(target_df)
-                    if target_accounts == 0:
-                        warnings.append("Target file is empty")
-                    
-                except Exception as e:
-                    warnings.append(f"Error reading target file: {str(e)}")
-        else:
-            warnings.append("No target file provided - will use default target list")
-        
-        # Validate prompt file (optional)
-        if dm_prompt_file:
-            if not dm_prompt_file.filename.endswith('.txt'):
-                warnings.append("DM prompt file should be a .txt file")
-            else:
-                try:
-                    prompt_content = dm_prompt_file.read().decode('utf-8')
-                    if not prompt_content.strip():
-                        warnings.append("DM prompt file is empty")
-                    dm_prompt_file.seek(0)  # Reset file pointer
-                except Exception as e:
-                    warnings.append(f"Error reading prompt file: {str(e)}")
-        
-        if errors:
-            return jsonify({"valid": False, "errors": errors, "warnings": warnings}), 400
-        
-        return jsonify({
-            "valid": True,
-            "message": "Files validated successfully",
-            "bot_accounts_count": valid_accounts if 'valid_accounts' in locals() else 0,
-            "target_accounts_count": target_accounts,
-            "warnings": warnings
-        })
-        
-    except Exception as e:
-        return jsonify({"valid": False, "errors": [str(e)]}), 500
-
-@app.route('/api/script/<script_id>/responses', methods=['GET'])
-@token_required
-def get_dm_responses(script_id):
+@app.get("/api/script/{script_id}/responses")
+async def get_dm_responses(script_id: str, current_user: dict = Depends(verify_token_dependency)):
     """Get positive responses for a completed DM automation script"""
     try:
         # Check if responses file exists
         responses_file = os.path.join(LOGS_FOLDER, f'dm_responses_{script_id}.json')
         
         if not os.path.exists(responses_file):
-            return jsonify({
+            return {
                 "responses": [],
                 "message": f"No responses found for this script. Looking for: {responses_file}"
-            })
+            }
         
         # Read and return responses
         with open(responses_file, 'r', encoding='utf-8') as f:
@@ -1161,504 +1009,199 @@ def get_dm_responses(script_id):
                 'timestamp': response['timestamp']
             })
         
-        return jsonify({
+        return {
             "responses": responses,
             "grouped_responses": grouped_responses,
             "total_responses": len(responses),
             "accounts_with_responses": len(grouped_responses)
-        })
+        }
         
     except Exception as e:
         logger.error(f"Error fetching responses for script {script_id}: {e}")
-        return jsonify({"error": str(e)}), 500
+        raise HTTPException(status_code=500, detail={"error": str(e)})
 
-@app.route('/api/warmup/validate', methods=['POST'])
-def validate_warmup_files():
-    """Validate uploaded files before starting the warmup script"""
-    try:
-        accounts_file = request.files.get('accounts_file')
-        
-        errors = []
-        warnings = []
-        
-        # Validate accounts file (required)
-        if not accounts_file:
-            errors.append("Accounts file is required")
-        elif not allowed_file(accounts_file.filename, 'files'):
-            errors.append("Invalid accounts file format. Use CSV or Excel")
-        else:
-            # Try to read the file to validate structure
-            try:
-                if accounts_file.filename.endswith('.csv'):
-                    df = pd.read_csv(accounts_file)
-                else:
-                    df = pd.read_excel(accounts_file)
-                
-                df.columns = df.columns.str.strip().str.title()
-                required_columns = ["Username", "Password"]
-                missing_columns = [col for col in required_columns if col not in df.columns]
-                if missing_columns:
-                    errors.append(f"Missing columns in accounts file: {missing_columns}")
-                elif df.empty:
-                    errors.append("Accounts file is empty")
-                else:
-                    valid_accounts = 0
-                    for i in range(len(df)):
-                        username = df.loc[i, "Username"]
-                        password = df.loc[i, "Password"]
-                        if pd.notna(username) and pd.notna(password):
-                            valid_accounts += 1
-                    if valid_accounts == 0:
-                        errors.append("No valid accounts found in file")
-            except Exception as e:
-                errors.append(f"Error reading accounts file: {str(e)}")
-        
-        if errors:
-            return jsonify({"valid": False, "errors": errors, "warnings": warnings}), 400
-        
-        return jsonify({
-            "valid": True, 
-            "message": "Files validated successfully",
-            "accounts_count": valid_accounts if 'valid_accounts' in locals() else 0,
-            "warnings": warnings
-        })
-        
-    except Exception as e:
-        return jsonify({"valid": False, "errors": [str(e)]}), 500
-
-# =================== AUTHENTICATION ENDPOINTS ===================
-
-@app.route('/api/auth/login', methods=['POST'])
-def login():
-    """Login endpoint for both admin and VA users"""
-    try:
-        data = request.get_json()
-        username = data.get('username')
-        password = data.get('password')
-        
-        if not username or not password:
-            return jsonify({'success': False, 'message': 'Username and password required'}), 400
-        
-        result = user_manager.authenticate_user(username, password)
-        
-        if result['success']:
-            return jsonify(result)
-        else:
-            return jsonify(result), 401
-            
-    except Exception as e:
-        logger.error(f"Login error: {e}")
-        return jsonify({'success': False, 'message': 'Internal server error'}), 500
-
-@app.route('/api/auth/verify-token', methods=['POST'])
-def verify_token():
-    """Verify JWT token"""
-    try:
-        data = request.get_json()
-        token = data.get('token')
-        
-        if not token:
-            return jsonify({'success': False, 'message': 'Token required'}), 400
-        
-        result = user_manager.verify_token(token)
-        return jsonify(result)
-        
-    except Exception as e:
-        logger.error(f"Token verification error: {e}")
-        return jsonify({'success': False, 'message': 'Internal server error'}), 500
-
-@app.route('/api/auth/logout', methods=['POST'])
-@token_required
-def logout():
-    """Logout endpoint"""
-    try:
-        log_user_activity('logout', f"User {request.current_user['username']} logged out")
-        return jsonify({'success': True, 'message': 'Logged out successfully'})
-    except Exception as e:
-        logger.error(f"Logout error: {e}")
-        return jsonify({'success': False, 'message': 'Internal server error'}), 500
-
-# =================== ADMIN ENDPOINTS ===================
-
-@app.route('/api/admin/users', methods=['GET'])
-@token_required
-@admin_required
-def get_all_users():
+# Admin Endpoints
+@app.get("/api/admin/users")
+async def get_all_users(current_user: dict = Depends(admin_required_dependency)):
     """Get all users (admin only)"""
     try:
         users = user_manager.get_all_users()
-        return jsonify({'success': True, 'users': users})
+        return {'success': True, 'users': users}
     except Exception as e:
         logger.error(f"Get users error: {e}")
-        return jsonify({'success': False, 'message': 'Internal server error'}), 500
+        raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
-@app.route('/api/admin/users', methods=['POST'])
-@token_required
-@admin_required
-def create_user():
+@app.post("/api/admin/users")
+async def create_user(user_data: UserCreate, current_user: dict = Depends(admin_required_dependency)):
     """Create new user (admin only)"""
     try:
-        data = request.get_json()
-        name = data.get('name')
-        username = data.get('username')
-        password = data.get('password')
-        role = data.get('role', 'va')
+        if user_data.role not in ['admin', 'va']:
+            raise HTTPException(status_code=400, detail={'success': False, 'message': 'Invalid role'})
         
-        if not name or not username or not password:
-            return jsonify({'success': False, 'message': 'Name, username and password required'}), 400
-        
-        if role not in ['admin', 'va']:
-            return jsonify({'success': False, 'message': 'Invalid role'}), 400
-        
-        result = user_manager.create_user(name, username, password, role)
+        result = user_manager.create_user(user_data.name, user_data.username, user_data.password, user_data.role)
         
         if result['success']:
-            log_user_activity('user_created', f"Created user {username} with role {role}")
+            log_user_activity('user_created', f"Created user {user_data.username} with role {user_data.role}", current_user['user_id'])
         
-        return jsonify(result)
+        return result
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Create user error: {e}")
-        return jsonify({'success': False, 'message': 'Internal server error'}), 500
+        raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
-@app.route('/api/admin/users/<user_id>', methods=['PUT'])
-@token_required
-@admin_required
-def update_user(user_id):
+@app.put("/api/admin/users/{user_id}")
+async def update_user(
+    user_id: str, 
+    user_update: UserUpdate, 
+    current_user: dict = Depends(admin_required_dependency)
+):
     """Update user (admin only)"""
     try:
-        data = request.get_json()
         updates = {}
         
         # Allow updating name, password, is_active
-        if 'name' in data:
-            updates['name'] = data['name']
-        if 'password' in data:
-            updates['password'] = data['password']
-        if 'is_active' in data:
-            updates['is_active'] = data['is_active']
+        if user_update.name is not None:
+            updates['name'] = user_update.name
+        if user_update.password is not None:
+            updates['password'] = user_update.password
+        if user_update.is_active is not None:
+            updates['is_active'] = user_update.is_active
         
         if not updates:
-            return jsonify({'success': False, 'message': 'No valid fields to update'}), 400
+            raise HTTPException(status_code=400, detail={'success': False, 'message': 'No updates provided'})
         
         result = user_manager.update_user(user_id, updates)
         
         if result['success']:
-            log_user_activity('user_updated', f"Updated user {user_id}")
+            log_user_activity('user_updated', f"Updated user {user_id}", current_user['user_id'])
         
-        return jsonify(result)
+        return result
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Update user error: {e}")
-        return jsonify({'success': False, 'message': 'Internal server error'}), 500
+        raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
-@app.route('/api/admin/users/<user_id>/deactivate', methods=['POST'])
-@token_required
-@admin_required
-def deactivate_user(user_id):
+@app.post("/api/admin/users/{user_id}/deactivate")
+async def deactivate_user(user_id: str, current_user: dict = Depends(admin_required_dependency)):
     """Deactivate user (admin only)"""
     try:
         result = user_manager.deactivate_user(user_id)
         
         if result['success']:
-            log_user_activity('user_deactivated', f"Deactivated user {user_id}")
+            log_user_activity('user_deactivated', f"Deactivated user {user_id}", current_user['user_id'])
         
-        return jsonify(result)
+        return result
         
     except Exception as e:
         logger.error(f"Deactivate user error: {e}")
-        return jsonify({'success': False, 'message': 'Internal server error'}), 500
+        raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
-@app.route('/api/admin/users/<user_id>', methods=['DELETE'])
-@token_required
-@admin_required
-def delete_user(user_id):
+@app.delete("/api/admin/users/{user_id}")
+async def delete_user(user_id: str, current_user: dict = Depends(admin_required_dependency)):
     """Delete user permanently (admin only)"""
     try:
         result = user_manager.delete_user(user_id)
         
         if result['success']:
-            log_user_activity('user_deleted', f"Deleted user {user_id}")
+            log_user_activity('user_deleted', f"Deleted user {user_id}", current_user['user_id'])
         
-        return jsonify(result)
+        return result
         
     except Exception as e:
         logger.error(f"Delete user error: {e}")
-        return jsonify({'success': False, 'message': 'Internal server error'}), 500
+        raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
-@app.route('/api/admin/activity-logs', methods=['GET'])
-@token_required
-@admin_required
-def get_activity_logs():
+@app.get("/api/admin/activity-logs")
+async def get_activity_logs(current_user: dict = Depends(admin_required_dependency)):
     """Get activity logs (admin only)"""
     try:
-        user_id = request.args.get('user_id')
-        limit = int(request.args.get('limit', 100))
-        
-        logs = user_manager.get_activity_logs(user_id, limit)
-        return jsonify({'success': True, 'logs': logs})
-        
+        logs = user_manager.get_activity_logs()
+        return {'success': True, 'logs': logs}
     except Exception as e:
         logger.error(f"Get activity logs error: {e}")
-        return jsonify({'success': False, 'message': 'Internal server error'}), 500
+        raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
-@app.route('/api/admin/stats', methods=['GET'])
-@token_required
-@admin_required
-def get_admin_stats():
+@app.get("/api/admin/stats")
+async def get_admin_stats(current_user: dict = Depends(admin_required_dependency)):
     """Get admin dashboard statistics"""
     try:
         users = user_manager.get_all_users()
-        logs = user_manager.get_activity_logs(limit=1000)
-        
-        # Calculate stats
-        total_users = len(users)
-        active_users = len([u for u in users if u['is_active']])
-        va_users = len([u for u in users if u['role'] == 'va'])
-        admin_users = len([u for u in users if u['role'] == 'admin'])
-        
-        # Recent activity (last 24 hours)
-        from datetime import datetime, timedelta
-        yesterday = datetime.now() - timedelta(days=1)
-        recent_logins = len([
-            log for log in logs 
-            if log['action'] == 'login' and 
-            datetime.fromisoformat(log['timestamp']) > yesterday
-        ])
-        
-        # Running scripts
-        running_scripts = len([s for s in active_scripts.values() if s['status'] == 'running'])
+        logs = user_manager.get_activity_logs(50)
         
         stats = {
-            'total_users': total_users,
-            'active_users': active_users,
-            'va_users': va_users,
-            'admin_users': admin_users,
-            'recent_logins': recent_logins,
-            'running_scripts': running_scripts,
-            'total_scripts': len(active_scripts)
+            'total_users': len(users),
+            'active_users': len([u for u in users if u.get('is_active', True)]),
+            'admin_users': len([u for u in users if u['role'] == 'admin']),
+            'va_users': len([u for u in users if u['role'] == 'va']),
+            'total_scripts': len(active_scripts),
+            'running_scripts': len([s for s in active_scripts.values() if s['status'] == 'running']),
+            'recent_activity': logs[:10]
         }
         
-        return jsonify({'success': True, 'stats': stats})
-        
+        return {'success': True, 'stats': stats}
     except Exception as e:
         logger.error(f"Get admin stats error: {e}")
-        return jsonify({'success': False, 'message': 'Internal server error'}), 500
+        raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
 # Instagram Accounts Management Endpoints
-@app.route('/api/instagram-accounts', methods=['GET'])
-@token_required
-def get_instagram_accounts():
+@app.get("/api/instagram-accounts")
+async def get_instagram_accounts(current_user: dict = Depends(verify_token_dependency)):
     """Get all Instagram accounts"""
     try:
         accounts = instagram_accounts_manager.get_all_accounts()
-        return jsonify({'success': True, 'accounts': accounts})
+        return {'success': True, 'accounts': accounts}
     except Exception as e:
-        logger.error(f"Get accounts error: {e}")
-        return jsonify({'success': False, 'message': 'Failed to retrieve accounts'}), 500
+        logger.error(f"Get Instagram accounts error: {e}")
+        raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
-@app.route('/api/instagram-accounts/active', methods=['GET'])
-@token_required
-def get_active_instagram_accounts():
+@app.get("/api/instagram-accounts/active")
+async def get_active_instagram_accounts(current_user: dict = Depends(verify_token_dependency)):
     """Get only active Instagram accounts"""
     try:
         accounts = instagram_accounts_manager.get_active_accounts()
-        return jsonify({'success': True, 'accounts': accounts})
+        return {'success': True, 'accounts': accounts}
     except Exception as e:
-        logger.error(f"Get active accounts error: {e}")
-        return jsonify({'success': False, 'message': 'Failed to retrieve active accounts'}), 500
+        logger.error(f"Get active Instagram accounts error: {e}")
+        raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
-@app.route('/api/instagram-accounts', methods=['POST'])
-@admin_required
-def add_instagram_account():
-    """Add a new Instagram account (Admin only)"""
+# File validation endpoints
+@app.post("/api/daily-post/validate")
+async def validate_daily_post_files(
+    media_file: UploadFile = File(...),
+    current_user: dict = Depends(verify_token_dependency)
+):
+    """Validate uploaded files before starting the script"""
     try:
-        data = request.get_json()
+        errors = []
         
-        required_fields = ['username', 'password']
-        for field in required_fields:
-            if not data.get(field):
-                return jsonify({'success': False, 'message': f'{field} is required'}), 400
-        
-        account = instagram_accounts_manager.add_account(
-            username=data['username'],
-            password=data['password'],
-            email=data.get('email', ''),
-            phone=data.get('phone', ''),
-            notes=data.get('notes', '')
-        )
-        
-        # Log activity
-        log_user_activity('create_instagram_account', 
-                         f"Added Instagram account: {data['username']}")
-        
-        return jsonify({'success': True, 'account': account})
-        
-    except ValueError as e:
-        return jsonify({'success': False, 'message': str(e)}), 400
-    except Exception as e:
-        logger.error(f"Add account error: {e}")
-        return jsonify({'success': False, 'message': 'Failed to add account'}), 500
-
-@app.route('/api/instagram-accounts/<account_id>', methods=['PUT'])
-@admin_required
-def update_instagram_account(account_id):
-    """Update an Instagram account (Admin only)"""
-    try:
-        data = request.get_json()
-        
-        # Remove empty strings to avoid overwriting with empty values
-        updates = {k: v for k, v in data.items() if v != ''}
-        
-        success = instagram_accounts_manager.update_account(account_id, updates)
-        
-        if success:
-            # Log activity
-            log_user_activity('update_instagram_account', 
-                             f"Updated Instagram account: {account_id}")
-            
-            account = instagram_accounts_manager.get_account_by_id(account_id)
-            return jsonify({'success': True, 'account': account})
+        # Validate media file
+        if not media_file:
+            errors.append("Media file is required")
         else:
-            return jsonify({'success': False, 'message': 'Account not found'}), 404
-            
-    except ValueError as e:
-        return jsonify({'success': False, 'message': str(e)}), 400
+            is_image = allowed_file(media_file.filename, 'images')
+            is_video = allowed_file(media_file.filename, 'videos')
+            if not (is_image or is_video):
+                errors.append("Invalid media file format. Use supported image/video formats")
+        
+        if errors:
+            raise HTTPException(status_code=400, detail={"valid": False, "errors": errors})
+        
+        return {
+            "valid": True, 
+            "message": "Files validated successfully",
+            "media_type": "video" if is_video else "image"
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Update account error: {e}")
-        return jsonify({'success': False, 'message': 'Failed to update account'}), 500
+        raise HTTPException(status_code=500, detail={"valid": False, "errors": [str(e)]})
 
-@app.route('/api/instagram-accounts/<account_id>', methods=['DELETE'])
-@admin_required
-def delete_instagram_account(account_id):
-    """Delete an Instagram account (Admin only)"""
-    try:
-        account = instagram_accounts_manager.get_account_by_id(account_id)
-        if not account:
-            return jsonify({'success': False, 'message': 'Account not found'}), 404
-        
-        success = instagram_accounts_manager.delete_account(account_id)
-        
-        if success:
-            # Log activity
-            log_user_activity('delete_instagram_account', 
-                             f"Deleted Instagram account: {account['username']}")
-            
-            return jsonify({'success': True, 'message': 'Account deleted successfully'})
-        else:
-            return jsonify({'success': False, 'message': 'Failed to delete account'}), 500
-            
-    except Exception as e:
-        logger.error(f"Delete account error: {e}")
-        return jsonify({'success': False, 'message': 'Failed to delete account'}), 500
-
-@app.route('/api/instagram-accounts/import', methods=['POST'])
-@admin_required
-def import_instagram_accounts():
-    """Import Instagram accounts from Excel/CSV file (Admin only)"""
-    try:
-        if 'accounts_file' not in request.files:
-            return jsonify({'success': False, 'message': 'No file provided'}), 400
-        
-        file = request.files['accounts_file']
-        if file.filename == '':
-            return jsonify({'success': False, 'message': 'No file selected'}), 400
-        
-        if not allowed_file(file.filename, 'files'):
-            return jsonify({'success': False, 'message': 'Invalid file type. Please upload CSV or Excel file'}), 400
-        
-        # Generate script ID for temporary file management
-        script_id = generate_script_id()
-        
-        # Save uploaded file temporarily
-        temp_file_path = save_temp_file(file, script_id, "accounts_import")
-        
-        # Import accounts
-        result = instagram_accounts_manager.import_accounts_from_file(temp_file_path)
-        
-        # Clean up temporary file
-        cleanup_temp_files(script_id)
-        
-        if result['success']:
-            # Log activity
-            log_user_activity('import_instagram_accounts', 
-                             f"Imported {result['added_count']} Instagram accounts")
-            
-            return jsonify({
-                'success': True,
-                'message': f"Successfully imported {result['added_count']} accounts",
-                'added_count': result['added_count'],
-                'skipped_count': result['skipped_count'],
-                'skipped_accounts': result['skipped_accounts']
-            })
-        else:
-            return jsonify({'success': False, 'message': result['error']}), 400
-            
-    except Exception as e:
-        logger.error(f"Import accounts error: {e}")
-        # Clean up on error
-        if 'script_id' in locals():
-            cleanup_temp_files(script_id)
-        return jsonify({'success': False, 'message': 'Failed to import accounts'}), 500
-
-@app.route('/api/admin/script-logs', methods=['GET'])
-@token_required
-@admin_required
-def get_all_script_logs():
-    """Get script execution history for all users (admin only)"""
-    try:
-        user_id_filter = request.args.get('user_id')
-        limit = int(request.args.get('limit', 100))
-        
-        # Combine current active scripts and completed/failed scripts
-        all_scripts = []
-        
-        # Add active/recent scripts with user info
-        for script_id, script_data in active_scripts.items():
-            user_id = script_data.get('user_id', 'system')
-            
-            # Filter by user if specified
-            if user_id_filter and user_id != user_id_filter:
-                continue
-                
-            # Get user info
-            user_info = None
-            if user_id != 'system':
-                try:
-                    user_info = user_manager.get_user_by_id(user_id)
-                except:
-                    user_info = None
-            
-            script_log = {
-                'script_id': script_id,
-                'user_id': user_id,
-                'user_name': user_info.get('name', 'Unknown') if user_info else 'System',
-                'user_username': user_info.get('username', 'system') if user_info else 'system',
-                'script_type': script_data.get('type', 'unknown'),
-                'status': script_data.get('status', 'unknown'),
-                'start_time': script_data.get('start_time'),
-                'end_time': script_data.get('end_time'),
-                'error': script_data.get('error'),
-                'stop_reason': script_data.get('stop_reason'),
-                'config': script_data.get('config', {}),
-                'logs_available': script_id in script_logs and len(script_logs[script_id]) > 0
-            }
-            all_scripts.append(script_log)
-        
-        # Sort by start_time (most recent first)
-        all_scripts.sort(key=lambda x: x['start_time'] or '', reverse=True)
-        
-        # Apply limit
-        if limit > 0:
-            all_scripts = all_scripts[:limit]
-        
-        return jsonify({'success': True, 'script_logs': all_scripts})
-        
-    except Exception as e:
-        logger.error(f"Get script logs error: {e}")
-        return jsonify({'success': False, 'message': 'Internal server error'}), 500
-
-if __name__ == '__main__':
-    # Development mode only - in production, use gunicorn
-    debug_mode = os.environ.get('FLASK_ENV', 'development') == 'development'
-    app.run(debug=debug_mode, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 5000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

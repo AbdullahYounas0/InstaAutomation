@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.production
+.env.development
 
 # Logs
 logs/
@@ -10,7 +11,7 @@ logs/
 # Uploads
 uploads/
 
-# User data
+# User data (CRITICAL: Never commit these to git!)
 users.json
 activity_logs.json
 instagram_accounts.json
@@ -26,6 +27,10 @@ venv/
 .venv/
 pip-log.txt
 pip-delete-this-directory.txt
+
+# Production secrets (NEVER COMMIT!)
+ecosystem.config.js
+nginx-production.conf
 
 # Node.js
 node_modules/

@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 from werkzeug.utils import secure_filename
 import os
 import threading
@@ -24,7 +24,49 @@ from instagram_accounts import instagram_accounts_manager
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+
+# Enhanced CORS Configuration with Environment Variable Support
+def get_allowed_origins():
+    """Get allowed origins from environment or use defaults"""
+    env_origins = os.environ.get('CORS_ORIGINS', '')
+    if env_origins:
+        # Split by comma and strip whitespace
+        return [origin.strip() for origin in env_origins.split(',') if origin.strip()]
+    else:
+        # Default development origins
+        return [
+            'http://localhost:3000',  # React development server
+            'http://127.0.0.1:3000',  # Alternative localhost
+            'http://localhost:8080',  # Alternative port
+            'http://127.0.0.1:8080',  # Alternative port
+        ]
+
+cors_config = {
+    'origins': get_allowed_origins(),
+    'methods': ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    'allow_headers': [
+        'Content-Type',
+        'Authorization',
+        'X-Requested-With',
+        'Accept',
+        'Origin',
+        'Access-Control-Request-Method',
+        'Access-Control-Request-Headers',
+        'Cache-Control',
+        'Pragma'
+    ],
+    'expose_headers': [
+        'Content-Range',
+        'X-Content-Range',
+        'Authorization',
+        'Content-Disposition'
+    ],
+    'supports_credentials': True,
+    'max_age': int(os.environ.get('CORS_MAX_AGE', 86400))  # 24 hours preflight cache by default
+}
+
+# Apply CORS configuration
+CORS(app, **cors_config)
 
 # Set Flask configuration from environment
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
@@ -50,6 +92,59 @@ script_temp_files = {}  # Track temporary files per script
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# =================== CORS HANDLERS ===================
+
+@app.before_request
+def handle_preflight():
+    """Handle CORS preflight requests"""
+    if request.method == "OPTIONS":
+        response = jsonify({'status': 'OK'})
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add('Access-Control-Allow-Headers', "*")
+        response.headers.add('Access-Control-Allow-Methods', "*")
+        return response
+
+@app.after_request
+def after_request(response):
+    """Add CORS headers to all responses"""
+    # Get origin from request
+    origin = request.headers.get('Origin')
+    
+    # Check if origin is allowed
+    allowed_origins = cors_config['origins']
+    if origin in allowed_origins or '*' in allowed_origins:
+        response.headers.add('Access-Control-Allow-Origin', origin)
+    
+    response.headers.add('Access-Control-Allow-Headers', 
+                        'Content-Type,Authorization,X-Requested-With,Accept,Origin,Cache-Control,Pragma')
+    response.headers.add('Access-Control-Allow-Methods', 
+                        'GET,POST,PUT,DELETE,OPTIONS,PATCH')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    response.headers.add('Access-Control-Max-Age', '86400')
+    
+    # Add security headers
+    response.headers.add('X-Content-Type-Options', 'nosniff')
+    response.headers.add('X-Frame-Options', 'DENY')
+    response.headers.add('X-XSS-Protection', '1; mode=block')
+    
+    return response
+
+@app.errorhandler(404)
+def not_found(error):
+    """Handle 404 errors with CORS headers"""
+    response = jsonify({'error': 'Resource not found'})
+    response.status_code = 404
+    return response
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Handle 500 errors with CORS headers"""
+    response = jsonify({'error': 'Internal server error'})
+    response.status_code = 500
+    return response
+
+# =================== UTILITY FUNCTIONS ===================
 
 def cleanup_temp_files(script_id):
     """Clean up temporary files for a specific script"""
@@ -124,6 +219,26 @@ def log_script_message(script_id, message, level="INFO"):
 def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy", "timestamp": datetime.now().isoformat()})
+
+@app.route('/api/cors-test', methods=['GET', 'POST', 'OPTIONS'])
+@cross_origin()
+def cors_test():
+    """CORS test endpoint to verify CORS configuration"""
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'CORS preflight OK'})
+    
+    return jsonify({
+        "status": "CORS working",
+        "method": request.method,
+        "origin": request.headers.get('Origin', 'No origin header'),
+        "user_agent": request.headers.get('User-Agent', 'No user agent'),
+        "timestamp": datetime.now().isoformat(),
+        "cors_config": {
+            "allowed_origins": cors_config['origins'],
+            "allowed_methods": cors_config['methods'],
+            "supports_credentials": cors_config['supports_credentials']
+        }
+    })
 
 # =================== DAILY POST ENDPOINTS ===================
 

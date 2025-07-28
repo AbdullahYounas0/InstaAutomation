@@ -15,58 +15,69 @@ NC='\033[0m' # No Color
 PROJECT_DIR="/var/www/instaAutomation"
 NGINX_SITE="wdyautomation.shop"
 
-# Check if running as root
+# Check if running as root - modified for VPS deployment
 if [[ $EUID -eq 0 ]]; then
-   echo -e "${RED}This script should not be run as root${NC}" 
-   exit 1
+   echo -e "${YELLOW}Running as root - this is okay for VPS deployment${NC}"
+   # Create a non-root user if needed
+   if ! id "deploy" &>/dev/null; then
+       echo -e "${YELLOW}Creating deploy user...${NC}"
+       useradd -m -s /bin/bash deploy
+       usermod -aG sudo deploy
+       # Set up sudo without password for deploy user
+       echo "deploy ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+   fi
+   
+   # Switch to deploy user for the rest of the script
+   echo -e "${YELLOW}Switching to deploy user...${NC}"
+   sudo -u deploy bash -c "
+       export PROJECT_DIR='$PROJECT_DIR'
+       export NGINX_SITE='$NGINX_SITE'
+       export RED='$RED'
+       export GREEN='$GREEN' 
+       export YELLOW='$YELLOW'
+       export NC='$NC'
+       
+       # Continue with the deployment as deploy user
+       exec /var/www/instaAutomation/deploy-production.sh
+   "
+   exit 0
 fi
 
 echo -e "${YELLOW}1. Updating system packages...${NC}"
-sudo apt update && sudo apt upgrade -y
+apt update && apt upgrade -y
 
 echo -e "${YELLOW}2. Installing required dependencies...${NC}"
-sudo apt install -y curl wget git nginx certbot python3-certbot-nginx
+apt install -y curl wget git nginx certbot python3-certbot-nginx python3-pip python3-venv
 
 # Install Node.js 18.x
 if ! command -v node &> /dev/null; then
     echo -e "${YELLOW}3. Installing Node.js...${NC}"
-    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-    sudo apt-get install -y nodejs
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+    apt-get install -y nodejs
 fi
 
 # Install PM2
 if ! command -v pm2 &> /dev/null; then
     echo -e "${YELLOW}4. Installing PM2...${NC}"
-    sudo npm install -g pm2
+    npm install -g pm2
 fi
 
-echo -e "${YELLOW}5. Setting up project directory...${NC}"
-sudo mkdir -p $PROJECT_DIR
-sudo chown -R $USER:$USER $PROJECT_DIR
-
-echo -e "${YELLOW}6. Cloning/updating repository...${NC}"
-if [ -d "$PROJECT_DIR/.git" ]; then
-    cd $PROJECT_DIR
-    git pull origin main
-else
-    git clone https://github.com/YOUR_USERNAME/instaAutomation.git $PROJECT_DIR
-    cd $PROJECT_DIR
-fi
-
-echo -e "${YELLOW}7. Setting up backend...${NC}"
+echo -e "${YELLOW}5. Setting up backend...${NC}"
 cd $PROJECT_DIR/backend
 
-# Create Python virtual environment
-python3 -m venv venv
-source venv/bin/activate
+# Create Python virtual environment if it doesn't exist
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
+fi
 
-# Install Python dependencies
+# Activate virtual environment and install dependencies
+source venv/bin/activate
 pip install -r requirements.txt
 
 # Create necessary directories
 mkdir -p logs uploads
 
-echo -e "${YELLOW}8. Setting up frontend...${NC}"
+echo -e "${YELLOW}6. Setting up frontend...${NC}"
 cd $PROJECT_DIR/frontend
 
 # Install Node dependencies
@@ -75,46 +86,52 @@ npm install
 # Build production version
 npm run build
 
-echo -e "${YELLOW}9. Configuring PM2...${NC}"
+echo -e "${YELLOW}7. Configuring PM2...${NC}"
 cd $PROJECT_DIR
 
-# Copy ecosystem config
-cp ecosystem.config.js ecosystem.config.production.js
+# Stop any existing PM2 processes
+pm2 stop all || true
+pm2 delete all || true
 
 # Start application with PM2
-pm2 start ecosystem.config.production.js
+pm2 start ecosystem.config.js
 
 # Save PM2 configuration
 pm2 save
 
 # Set PM2 to start on system boot
-pm2 startup
-sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u $USER --hp $HOME
+pm2 startup systemd
+env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u root --hp /root
 
-echo -e "${YELLOW}10. Configuring Nginx...${NC}"
+echo -e "${YELLOW}8. Configuring Nginx...${NC}"
 # Copy nginx configuration
-sudo cp nginx-production.conf /etc/nginx/sites-available/$NGINX_SITE
+cp nginx-production.conf /etc/nginx/sites-available/$NGINX_SITE
 
 # Enable the site
-sudo ln -sf /etc/nginx/sites-available/$NGINX_SITE /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/$NGINX_SITE /etc/nginx/sites-enabled/
 
 # Remove default site
-sudo rm -f /etc/nginx/sites-enabled/default
+rm -f /etc/nginx/sites-enabled/default
 
 # Test nginx configuration
-sudo nginx -t
+nginx -t
 
 # Restart nginx
-sudo systemctl restart nginx
+systemctl restart nginx
 
-echo -e "${YELLOW}11. Setting up SSL certificate...${NC}"
-sudo certbot --nginx -d wdyautomation.shop -d www.wdyautomation.shop --non-interactive --agree-tos --email your-email@example.com
+echo -e "${YELLOW}9. Setting up SSL certificate...${NC}"
+# First, make sure the domain is pointing to this server
+echo "Please ensure your domain wdyautomation.shop is pointing to this server's IP address"
+echo "Press Enter to continue with SSL setup, or Ctrl+C to exit..."
+read
 
-echo -e "${YELLOW}12. Configuring firewall...${NC}"
-sudo ufw allow 22/tcp      # SSH
-sudo ufw allow 80/tcp      # HTTP
-sudo ufw allow 443/tcp     # HTTPS
-sudo ufw --force enable
+certbot --nginx -d wdyautomation.shop -d www.wdyautomation.shop --non-interactive --agree-tos --email admin@wdyautomation.shop
+
+echo -e "${YELLOW}10. Configuring firewall...${NC}"
+ufw allow 22/tcp      # SSH
+ufw allow 80/tcp      # HTTP
+ufw allow 443/tcp     # HTTPS
+ufw --force enable
 
 echo -e "${GREEN}✅ Deployment completed successfully!${NC}"
 echo -e "${GREEN}Your application is now live at: https://wdyautomation.shop${NC}"

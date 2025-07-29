@@ -594,8 +594,13 @@ async def worker(playwright: Playwright, account_queue: asyncio.Queue, config, l
     accounts_failed = 0
 
     try:
+        # Force headless mode in production environment (unless explicitly overridden)
+        is_production = os.environ.get('ENVIRONMENT') == 'production'
+        allow_visual_in_prod = os.environ.get('ENABLE_VISUAL_MODE') == 'true'
+        headless_mode = True if (is_production and not allow_visual_in_prod) else not config.get('visual_mode', False)
+        
         browser = await playwright.chromium.launch(
-            headless=not config.get('visual_mode', False),
+            headless=headless_mode,  # Always headless in production unless overridden
             channel="chrome"
         )
         

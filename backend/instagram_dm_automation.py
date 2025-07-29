@@ -95,8 +95,10 @@ class DMAutomationEngine:
         self.log_callback(formatted_message, level)
 
     async def update_visual_status(self, page, status_text, account_number, step=None):
-        """Update visual status banner if in visual mode"""
-        if self.visual_mode:
+        """Update visual status banner if in visual mode and not in production (unless explicitly enabled)"""
+        is_production = os.environ.get('ENVIRONMENT') == 'production'
+        allow_visual_in_prod = os.environ.get('ENABLE_VISUAL_MODE') == 'true'
+        if self.visual_mode and (not is_production or allow_visual_in_prod):
             try:
                 step_text = f" - Step {step}" if step else ""
                 # Choose color based on status
@@ -231,8 +233,13 @@ class DMAutomationEngine:
                 self.log(f"[Account {account_number}] Browser window positioned at ({x_position}, {y_position}) - Grid position: Col {col+1}, Row {row+1}")
             
             # Launch browser with stealth mode
+            # Force headless mode in production environment (unless explicitly overridden)
+            is_production = os.environ.get('ENVIRONMENT') == 'production'
+            allow_visual_in_prod = os.environ.get('ENABLE_VISUAL_MODE') == 'true'
+            headless_mode = True if (is_production and not allow_visual_in_prod) else not self.visual_mode
+            
             browser = await playwright.chromium.launch(
-                headless=not self.visual_mode,  # Show browsers only in visual mode
+                headless=headless_mode,  # Always headless in production unless overridden
                 proxy=proxy_config,
                 args=browser_args
             )

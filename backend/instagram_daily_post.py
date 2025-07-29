@@ -157,8 +157,10 @@ class InstagramDailyPostAutomation:
             raise
 
     async def update_visual_status(self, page, status_text, step=None):
-        """Update visual status banner if in visual mode"""
-        if self.visual_mode:
+        """Update visual status banner if in visual mode and not in production (unless explicitly enabled)"""
+        is_production = os.environ.get('ENVIRONMENT') == 'production'
+        allow_visual_in_prod = os.environ.get('ENABLE_VISUAL_MODE') == 'true'
+        if self.visual_mode and (not is_production or allow_visual_in_prod):
             try:
                 step_text = f" - Step {step}" if step else ""
                 # Choose color based on status
@@ -316,8 +318,13 @@ class InstagramDailyPostAutomation:
                     viewport_width = 1920
                     viewport_height = 1080
                 
+                # Force headless mode in production environment (unless explicitly overridden)
+                is_production = os.environ.get('ENVIRONMENT') == 'production'
+                allow_visual_in_prod = os.environ.get('ENABLE_VISUAL_MODE') == 'true'
+                headless_mode = True if (is_production and not allow_visual_in_prod) else not self.visual_mode
+                
                 browser = await p.chromium.launch(
-                    headless=not self.visual_mode,  # Show browsers only in visual mode
+                    headless=headless_mode,  # Always headless in production
                     args=browser_args
                 )
                 
@@ -328,8 +335,10 @@ class InstagramDailyPostAutomation:
                 
                 page = await context.new_page()
                 
-                # Set page title and add visual indicators in visual mode
-                if self.visual_mode:
+                # Set page title and add visual indicators in visual mode (only in development or if explicitly enabled in production)
+                is_production = os.environ.get('ENVIRONMENT') == 'production'
+                allow_visual_in_prod = os.environ.get('ENABLE_VISUAL_MODE') == 'true'
+                if self.visual_mode and (not is_production or allow_visual_in_prod):
                     await page.evaluate(f'''
                         document.title = "Account {account_number}: {username}";
                         // Add a colored banner to identify the account

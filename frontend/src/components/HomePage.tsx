@@ -5,6 +5,24 @@ import { authService } from '../services/authService';
 import { getApiUrl, getApiHeaders } from '../utils/apiUtils';
 import './HomePage.css';
 
+// Logging utility for HomePage
+const logHomePageEvent = (level: 'info' | 'warn' | 'error', message: string, data?: any) => {
+  const timestamp = new Date().toISOString();
+  const logMessage = `[HomePage] ${timestamp} - ${level.toUpperCase()}: ${message}`;
+  
+  switch (level) {
+    case 'error':
+      console.error(logMessage, data || '');
+      break;
+    case 'warn':
+      console.warn(logMessage, data || '');
+      break;
+    default:
+      console.log(logMessage, data || '');
+      break;
+  }
+};
+
 interface Script {
   id: string;
   type: string;
@@ -40,88 +58,148 @@ const HomePage: React.FC = () => {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const currentUser = authService.getCurrentUser();
 
+  logHomePageEvent('info', 'HomePage component initialized', { 
+    currentUser: currentUser?.username, 
+    role: currentUser?.role 
+  });
+
   useEffect(() => {
+    logHomePageEvent('info', 'Setting up script polling interval');
+    
     // Poll for script status updates every 5 seconds
     const interval = setInterval(() => {
+      logHomePageEvent('info', 'Polling for script updates');
       fetchActiveScripts();
       fetchScriptStats();
     }, 5000);
     
     // Initial fetch
+    logHomePageEvent('info', 'Performing initial data fetch');
     fetchActiveScripts();
     fetchScriptStats();
 
-    return () => clearInterval(interval);
+    return () => {
+      logHomePageEvent('info', 'Cleaning up polling interval');
+      clearInterval(interval);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchActiveScripts = async () => {
     try {
+      logHomePageEvent('info', 'Fetching active scripts');
       setFetchError(null);
       const response = await axios.get(getApiUrl('/scripts'), {
         headers: getApiHeaders()
       });
       setActiveScripts(response.data);
+      logHomePageEvent('info', 'Successfully fetched active scripts', { 
+        scriptCount: Object.keys(response.data).length 
+      });
     } catch (error) {
-      console.error('Error fetching scripts:', error);
+      logHomePageEvent('error', 'Error fetching scripts', error);
       if (axios.isAxiosError(error)) {
         if (error.response?.status === 401) {
           // Unauthorized, redirect to login
+          logHomePageEvent('warn', 'Unauthorized access, redirecting to login');
           navigate('/login');
         } else if (error.code === 'ECONNREFUSED' || !error.response) {
-          setFetchError('Backend server is not running');
+          const errorMsg = 'Backend server is not running';
+          setFetchError(errorMsg);
+          logHomePageEvent('error', errorMsg);
         } else {
-          setFetchError(`Error: ${error.response?.status} ${error.response?.statusText}`);
+          const errorMsg = `Error: ${error.response?.status} ${error.response?.statusText}`;
+          setFetchError(errorMsg);
+          logHomePageEvent('error', errorMsg);
         }
       } else {
-        setFetchError('Unknown error occurred');
+        const errorMsg = 'Unknown error occurred';
+        setFetchError(errorMsg);
+        logHomePageEvent('error', errorMsg, error);
       }
     } finally {
       setIsLoading(false);
+      logHomePageEvent('info', 'Finished fetching active scripts, loading state updated');
     }
   };
 
   const fetchScriptStats = async () => {
     try {
+      logHomePageEvent('info', 'Fetching script statistics');
       const response = await axios.get(getApiUrl('/scripts/stats'), {
         headers: getApiHeaders()
       });
       setScriptStats(response.data);
+      logHomePageEvent('info', 'Successfully fetched script statistics', {
+        totalScripts: response.data.total_scripts,
+        runningScripts: response.data.running_scripts,
+        completedScripts: response.data.completed_scripts,
+        errorScripts: response.data.error_scripts
+      });
     } catch (error) {
-      console.error('Error fetching script stats:', error);
+      logHomePageEvent('error', 'Error fetching script stats', error);
       // Don't set loading error for stats, as main scripts data is more important
     }
   };
 
   const handleLogout = async () => {
-    await authService.logout();
-    navigate('/login');
+    logHomePageEvent('info', 'User initiating logout');
+    try {
+      await authService.logout();
+      logHomePageEvent('info', 'Logout successful, redirecting to login');
+      navigate('/login');
+    } catch (error) {
+      logHomePageEvent('error', 'Error during logout', error);
+      // Still redirect to login even if logout fails
+      navigate('/login');
+    }
   };
 
   const handleButtonClick = (path: string) => {
+    logHomePageEvent('info', 'Script button clicked', { path });
     // Open in new tab
     window.open(path, '_blank');
   };
 
   const getScriptStatus = (type: string) => {
+    logHomePageEvent('info', 'Getting script status', { type });
+    
     // Use stats data if available, otherwise fall back to activeScripts
     if (scriptStats && scriptStats.script_types[type]) {
       const typeStats = scriptStats.script_types[type];
-      if (typeStats.running > 0) return 'running';
-      if (typeStats.error > 0) return 'error';
-      if (typeStats.completed > 0) return 'completed';
-      if (typeStats.stopped > 0) return 'stopped';
-      return 'idle';
+      let status = 'idle';
+      
+      if (typeStats.running > 0) status = 'running';
+      else if (typeStats.error > 0) status = 'error';
+      else if (typeStats.completed > 0) status = 'completed';
+      else if (typeStats.stopped > 0) status = 'stopped';
+      
+      logHomePageEvent('info', 'Script status determined from stats', { 
+        type, 
+        status, 
+        stats: typeStats 
+      });
+      return status;
     }
 
     // Fallback to old method
     const scripts = Object.values(activeScripts).filter(script => script.type === type);
-    if (scripts.length === 0) return 'idle';
+    if (scripts.length === 0) {
+      logHomePageEvent('info', 'No scripts found for type', { type });
+      return 'idle';
+    }
     
     const runningScripts = scripts.filter(script => script.status === 'running');
-    if (runningScripts.length > 0) return 'running';
+    if (runningScripts.length > 0) {
+      logHomePageEvent('info', 'Found running scripts', { type, count: runningScripts.length });
+      return 'running';
+    }
     
     const recentScript = scripts[scripts.length - 1];
+    logHomePageEvent('info', 'Using most recent script status', { 
+      type, 
+      status: recentScript.status 
+    });
     return recentScript.status;
   };
 
@@ -187,7 +265,11 @@ const HomePage: React.FC = () => {
           <div className="error-message">
             <h3>⚠️ Connection Error</h3>
             <p>{fetchError}</p>
-            <button onClick={() => { fetchActiveScripts(); fetchScriptStats(); }} className="retry-btn">Retry</button>
+            <button onClick={() => { 
+              logHomePageEvent('info', 'Retry button clicked, attempting to refetch data');
+              fetchActiveScripts(); 
+              fetchScriptStats(); 
+            }} className="retry-btn">Retry</button>
           </div>
         ) : (
           <>

@@ -3,6 +3,24 @@ import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/authService';
 import './LoginPage.css';
 
+// Logging utility for LoginPage
+const logLoginEvent = (level: 'info' | 'warn' | 'error', message: string, data?: any) => {
+  const timestamp = new Date().toISOString();
+  const logMessage = `[LoginPage] ${timestamp} - ${level.toUpperCase()}: ${message}`;
+  
+  switch (level) {
+    case 'error':
+      console.error(logMessage, data || '');
+      break;
+    case 'warn':
+      console.warn(logMessage, data || '');
+      break;
+    default:
+      console.log(logMessage, data || '');
+      break;
+  }
+};
+
 interface LoginPageProps {}
 
 const LoginPage: React.FC<LoginPageProps> = () => {
@@ -16,27 +34,45 @@ const LoginPage: React.FC<LoginPageProps> = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
+  logLoginEvent('info', 'LoginPage component initialized');
+
   useEffect(() => {
+    logLoginEvent('info', 'Checking existing authentication status');
+    
     // Check if user is already logged in
     const token = localStorage.getItem('auth_token');
     if (token) {
+      logLoginEvent('info', 'Found existing token, verifying...');
       authService.verifyToken(token).then(result => {
         if (result.success) {
           const user = JSON.parse(localStorage.getItem('user') || '{}');
+          logLoginEvent('info', 'Token valid, redirecting user', { 
+            username: user.username, 
+            role: user.role 
+          });
+          
           if (user.role === 'admin') {
             navigate('/admin');
           } else {
             navigate('/home');
           }
         } else {
+          logLoginEvent('warn', 'Token invalid, clearing storage');
           localStorage.removeItem('auth_token');
           localStorage.removeItem('user');
         }
+      }).catch(error => {
+        logLoginEvent('error', 'Error verifying token', error);
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('user');
       });
+    } else {
+      logLoginEvent('info', 'No existing token found');
     }
   }, [navigate]);
 
   const handleRoleSelection = (role: 'admin' | 'va') => {
+    logLoginEvent('info', 'Role selected', { role });
     setLoginType(role);
     setShowLogin(true);
     setError('');
@@ -45,6 +81,7 @@ const LoginPage: React.FC<LoginPageProps> = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
+    logLoginEvent('info', 'Input field changed', { field: name, hasValue: !!value });
     setCredentials(prev => ({
       ...prev,
       [name]: value
@@ -54,6 +91,11 @@ const LoginPage: React.FC<LoginPageProps> = () => {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    logLoginEvent('info', 'Login attempt started', { 
+      username: credentials.username, 
+      loginType 
+    });
+    
     setLoading(true);
     setError('');
 
@@ -61,28 +103,42 @@ const LoginPage: React.FC<LoginPageProps> = () => {
       const result = await authService.login(credentials.username, credentials.password);
       
       if (result.success && result.token && result.user) {
+        logLoginEvent('info', 'Login successful', { 
+          username: result.user.username, 
+          role: result.user.role 
+        });
         // Store token and user info
         localStorage.setItem('auth_token', result.token);
         localStorage.setItem('user', JSON.stringify(result.user));
         
         // Redirect based on role
         if (result.user.role === 'admin') {
+          logLoginEvent('info', 'Redirecting admin user to admin dashboard');
           navigate('/admin');
         } else {
+          logLoginEvent('info', 'Redirecting VA user to home page');
           navigate('/home');
         }
       } else {
-        setError(result.message || 'Login failed');
+        const errorMsg = result.message || 'Login failed';
+        logLoginEvent('warn', 'Login failed', { error: errorMsg, username: credentials.username });
+        setError(errorMsg);
       }
     } catch (error) {
-      setError('Network error. Please try again.');
-      console.error('Login error:', error);
+      const errorMsg = 'Network error. Please try again.';
+      logLoginEvent('error', 'Login network error', { 
+        error, 
+        username: credentials.username 
+      });
+      setError(errorMsg);
     } finally {
       setLoading(false);
+      logLoginEvent('info', 'Login attempt completed');
     }
   };
 
   const handleBack = () => {
+    logLoginEvent('info', 'Back button clicked, returning to role selection');
     setShowLogin(false);
     setError('');
     setCredentials({ username: '', password: '' });

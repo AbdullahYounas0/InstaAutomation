@@ -22,8 +22,17 @@ import traceback
 import pandas as pd
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-
+# Initialize logger early for use in CORS and other utilities
+logger = logging.getLogger("insta_automation")
+logger.setLevel(logging.INFO)
+if not logger.hasHandlers():
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 # Import custom modules
+
+
 from auth import (
     user_manager, 
     verify_token_dependency, 
@@ -35,49 +44,100 @@ from instagram_daily_post import run_daily_post_automation
 from instagram_dm_automation import run_dm_automation
 from instagram_warmup import run_warmup_automation
 
-# Load environment variables
-load_dotenv()
+# Load environment variables based on environment
+environment = os.environ.get('ENVIRONMENT', 'development')
+if environment == 'production':
+    load_dotenv('.env.production')
+else:
+    load_dotenv('.env.development')
+
+logger.info(f"Loading environment: {environment}")
 
 # Initialize FastAPI app
 app = FastAPI(
     title="Instagram Automation API",
     description="FastAPI backend for Instagram automation scripts",
-    version="2.0.0"
+    version="2.0.0",
+    docs_url="/docs" if os.environ.get('ENVIRONMENT') != 'production' else None,
+    redoc_url="/redoc" if os.environ.get('ENVIRONMENT') != 'production' else None
 )
+
+logger.info("FastAPI Instagram Automation Backend starting up...")
+logger.info(f"App title: {app.title}")
+logger.info(f"App version: {app.version}")
 
 # CORS Configuration
 def get_allowed_origins():
     """Get allowed origins from environment or use defaults"""
+    logger.debug("Configuring CORS allowed origins")
     env_origins = os.environ.get('CORS_ORIGINS', '')
     if env_origins:
-        return [origin.strip() for origin in env_origins.split(',') if origin.strip()]
+        origins = [origin.strip() for origin in env_origins.split(',') if origin.strip()]
+        logger.info(f"Using environment CORS origins: {origins}")
+        return origins
     else:
-        return [
+        default_origins = [
             'http://localhost:3000',
-            'http://127.0.0.1:3000',
-            'http://localhost:8080',
-            'http://127.0.0.1:8080',
             'https://wdyautomation.shop',
             'https://www.wdyautomation.shop'
         ]
+        logger.info(f"Using default CORS origins: {default_origins}")
+        return default_origins
+
+def get_allowed_headers():
+    """Get comprehensive list of allowed headers"""
+    logger.debug("Getting allowed headers for CORS configuration")
+    return [
+        # Standard headers
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Origin",
+        "User-Agent",
+        "DNT",
+        "Cache-Control",
+        "X-Mx-ReqToken",
+        "Keep-Alive",
+        "X-Requested-With",
+        "If-Modified-Since",
+        "Pragma",
+        "Expires",
+        # CORS preflight headers
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers",
+        # Custom headers that might be used by frontend
+        "X-CSRF-Token",
+        "X-CSRFToken",
+        "csrftoken",
+        # File upload headers
+        "X-File-Name",
+        "X-File-Size",
+        "X-File-Type",
+        # Additional security headers
+        "X-Forwarded-For",
+        "X-Real-IP",
+        "X-Forwarded-Proto",
+        # Content negotiation
+        "Accept-Language",
+        "Accept-Encoding"
+    ]
+
+# Enhanced CORS middleware with comprehensive configuration
+logger.info("Configuring CORS middleware")
+
+# Get environment-specific CORS settings
+is_production = os.environ.get('ENVIRONMENT') == 'production'
+allowed_origins = get_allowed_origins()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=get_allowed_origins(),
+    allow_origins=allowed_origins if is_production else ["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=[
-        "Content-Type",
-        "Authorization",
-        "X-Requested-With",
-        "Accept",
-        "Origin",
-        "Access-Control-Request-Method",
-        "Access-Control-Request-Headers",
-        "Cache-Control",
-        "Pragma"
-    ],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=get_allowed_headers(),
 )
+logger.info(f"CORS middleware configured successfully for {os.environ.get('ENVIRONMENT', 'development')} environment")
+logger.info(f"Allowed origins: {allowed_origins if is_production else ['*']}")
 
 # Configuration
 LOGS_FOLDER = 'logs'
@@ -88,9 +148,12 @@ ALLOWED_EXTENSIONS = {
 }
 
 # Create necessary directories
+logger.info(f"Creating logs directory: {LOGS_FOLDER}")
 os.makedirs(LOGS_FOLDER, exist_ok=True)
+logger.info("Logs directory created successfully")
 
 # Global variables to track running scripts
+logger.info("Initializing global script tracking variables")
 active_scripts = {}
 script_logs = {}
 script_stop_flags = {}
@@ -98,6 +161,7 @@ script_temp_files = {}
 
 # Setup logging
 log_level = os.environ.get('LOG_LEVEL', 'INFO').upper()
+logger.info(f"Setting up logging with level: {log_level}")
 logging.basicConfig(
     level=getattr(logging, log_level),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -107,8 +171,10 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+logger.info("Main application logger configured successfully")
 
 # Pydantic models
+logger.debug("Defining Pydantic models")
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -133,26 +199,37 @@ class StopScriptRequest(BaseModel):
 # Utility Functions
 def cleanup_temp_files(script_id):
     """Clean up temporary files for a specific script"""
+    logger.info(f"Cleaning up temporary files for script: {script_id}")
     if script_id in script_temp_files:
+        files_cleaned = 0
         for file_path in script_temp_files[script_id]:
             try:
                 if os.path.exists(file_path):
                     os.remove(file_path)
-                    logger.info(f"Cleaned up temporary file: {file_path}")
+                    logger.debug(f"Cleaned up temporary file: {file_path}")
+                    files_cleaned += 1
             except Exception as e:
                 logger.error(f"Error cleaning up temporary file {file_path}: {e}")
         del script_temp_files[script_id]
+        logger.info(f"Cleanup completed for script {script_id}: {files_cleaned} files removed")
 
 def cleanup_all_temp_files():
     """Clean up all temporary files on shutdown"""
+    logger.info("Starting cleanup of all temporary files")
+    scripts_cleaned = 0
     for script_id in list(script_temp_files.keys()):
         cleanup_temp_files(script_id)
+        scripts_cleaned += 1
+    logger.info(f"Cleanup completed for all temporary files: {scripts_cleaned} scripts cleaned")
 
 # Register cleanup function
+logger.info("Registering cleanup function for shutdown")
 atexit.register(cleanup_all_temp_files)
 
 def save_temp_file(file: UploadFile, script_id: str, prefix: str = ""):
     """Save uploaded file to temporary location and track it"""
+    logger.debug(f"Saving temporary file for script {script_id} with prefix: {prefix}")
+    
     if script_id not in script_temp_files:
         script_temp_files[script_id] = []
     
@@ -168,8 +245,10 @@ def save_temp_file(file: UploadFile, script_id: str, prefix: str = ""):
         
         # Track the temporary file
         script_temp_files[script_id].append(temp_path)
+        logger.debug(f"Temporary file saved successfully: {temp_path}")
         return temp_path
     except Exception as e:
+        logger.error(f"Error saving temporary file: {e}")
         # Clean up on error
         try:
             os.close(temp_fd)
@@ -180,12 +259,17 @@ def save_temp_file(file: UploadFile, script_id: str, prefix: str = ""):
 
 def allowed_file(filename: str, file_type: str) -> bool:
     """Check if file extension is allowed"""
-    return '.' in filename and \
+    logger.debug(f"Checking if file is allowed: {filename}, type: {file_type}")
+    allowed = '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS.get(file_type, set())
+    logger.debug(f"File allowed: {allowed}")
+    return allowed
 
 def generate_script_id() -> str:
     """Generate unique script ID"""
-    return str(uuid.uuid4())
+    script_id = str(uuid.uuid4())
+    logger.debug(f"Generated script ID: {script_id}")
+    return script_id
 
 def log_script_message(script_id: str, message: str, level: str = "INFO"):
     """Log message for specific script"""
@@ -196,20 +280,24 @@ def log_script_message(script_id: str, message: str, level: str = "INFO"):
         script_logs[script_id] = []
     
     script_logs[script_id].append(log_entry)
+    logger.debug(f"Script {script_id} log: {message}")
     
     # Keep only last 1000 logs per script
     if len(script_logs[script_id]) > 1000:
         script_logs[script_id] = script_logs[script_id][-1000:]
+        logger.debug(f"Trimmed logs for script {script_id} to last 1000 entries")
 
 # Health and Debug Endpoints
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint"""
+    logger.debug("Health check endpoint accessed")
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 @app.get("/api/debug")
 async def debug_endpoint(request: Request):
     """Debug endpoint to check server status"""
+    logger.info(f"Debug endpoint accessed from {request.client.host if request.client else 'unknown'}")
     return {
         "status": "Server is running",
         "timestamp": datetime.now().isoformat(),
@@ -228,68 +316,121 @@ async def debug_endpoint(request: Request):
 @app.get("/api/cors-test")
 @app.post("/api/cors-test")
 async def cors_test(request: Request):
-    """CORS test endpoint to verify CORS configuration"""
+    """Enhanced CORS test endpoint to verify CORS configuration"""
     try:
-        return {
+        # Get all request headers for debugging
+        request_headers = dict(request.headers)
+        
+        # Check origin
+        origin = request.headers.get('origin') or request.headers.get('Origin', 'No origin header')
+        allowed_origins = get_allowed_origins()
+        origin_allowed = origin in allowed_origins if origin != 'No origin header' else False
+        
+        response_data = {
             "status": "CORS working",
-            "method": request.method,
-            "origin": request.headers.get('Origin', 'No origin header'),
-            "user_agent": request.headers.get('User-Agent', 'No user agent'),
             "timestamp": datetime.now().isoformat(),
+            "method": request.method,
+            "origin": {
+                "value": origin,
+                "allowed": origin_allowed,
+                "allowed_origins": allowed_origins
+            },
+            "request_info": {
+                "url": str(request.url),
+                "user_agent": request.headers.get('User-Agent', 'No user agent'),
+                "referer": request.headers.get('Referer', 'No referer'),
+                "host": request.headers.get('Host', 'No host'),
+                "all_headers": request_headers
+            },
             "server_info": {
                 "fastapi_version": "0.104.1",
-                "endpoint_working": True
+                "endpoint_working": True,
+                "environment": os.environ.get('ENVIRONMENT', 'development'),
+                "port": os.environ.get('PORT', '8000')
             },
             "cors_config": {
-                "allowed_origins": get_allowed_origins(),
-                "allowed_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-                "supports_credentials": True
+                "allowed_origins": allowed_origins,
+                "allowed_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
+                "allowed_headers": get_allowed_headers()[:10],  # Show first 10 headers to avoid clutter
+                "supports_credentials": True,
+                "max_age": 3600
+            },
+            "test_results": {
+                "origin_check": "✅ Passed" if origin_allowed else "❌ Failed - Origin not in allowed list",
+                "method_check": "✅ Passed" if request.method in ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"] else "❌ Failed",
+                "credentials_supported": "✅ Yes",
+                "preflight_supported": "✅ Yes (OPTIONS method available)"
             }
         }
+        
+        return response_data
+        
     except Exception as e:
+        logger.error(f"CORS test endpoint error: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
             detail={
                 "status": "error",
                 "error": str(e),
                 "method": request.method,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "message": "CORS test endpoint encountered an error"
             }
         )
 
 # Authentication Endpoints
+@app.options("/api/auth/login")
+async def login_preflight():
+    """Handle preflight request for login endpoint"""
+    logger.debug("Login preflight request received")
+    return {"message": "OK"}
+
 @app.post("/api/auth/login")
 async def login(login_request: LoginRequest, request: Request):
     """Login endpoint for both admin and VA users"""
+    client_ip = request.client.host if request.client else 'unknown'
+    logger.info(f"Login attempt from {client_ip} for user {login_request.username}")
+    
     try:
-        client_ip = request.client.host if request.client else 'unknown'
         result = user_manager.authenticate_user(login_request.username, login_request.password)
         
         if result['success']:
             # Log successful login with IP
             user_id = result['user']['user_id']
             log_user_activity('login', f"Successful login from {client_ip}", user_id, client_ip)
+            logger.info(f"Successful login for user {login_request.username} from {client_ip}")
             return result
         else:
             # Log failed login attempt
             log_user_activity('failed_login', f"Failed login attempt for {login_request.username} from {client_ip}", ip_address=client_ip)
+            logger.warning(f"Failed login attempt for user {login_request.username} from {client_ip}")
             raise HTTPException(status_code=401, detail=result)
             
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        logger.error(f"Login error: {e}")
+        logger.error(f"Login error for user {login_request.username}: {e}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
+
+@app.options("/api/auth/verify-token")
+async def verify_token_preflight():
+    """Handle preflight request for verify-token endpoint"""
+    logger.debug("Verify token preflight request received")
+    return {"message": "OK"}
 
 @app.post("/api/auth/verify-token")
 async def verify_token(token_request: TokenRequest):
     """Verify JWT token"""
+    logger.debug("Token verification request received")
     try:
         result = user_manager.verify_token(token_request.token)
         if not result['success']:
+            logger.warning(f"Token verification failed: {result['message']}")
             raise HTTPException(status_code=401, detail=result)
+        
+        logger.debug(f"Token verification successful for user: {result['payload'].get('username')}")
         return result
         
     except HTTPException:
@@ -301,11 +442,13 @@ async def verify_token(token_request: TokenRequest):
 @app.post("/api/auth/logout")
 async def logout(current_user: dict = Depends(verify_token_dependency)):
     """Logout endpoint"""
+    logger.info(f"Logout request from user: {current_user.get('username')}")
     try:
         log_user_activity('logout', f"User {current_user['username']} logged out", current_user['user_id'])
+        logger.info(f"User {current_user['username']} logged out successfully")
         return {'success': True, 'message': 'Logged out successfully'}
     except Exception as e:
-        logger.error(f"Logout error: {e}")
+        logger.error(f"Logout error for user {current_user.get('username')}: {e}")
         raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
 # Daily Post Endpoints
@@ -894,15 +1037,19 @@ async def list_scripts(current_user: dict = Depends(verify_token_dependency)):
     user_id = current_user.get('user_id', 'system')
     user_role = current_user.get('role', 'va')
     
+    logger.info(f"User {current_user.get('username')} ({user_role}) requesting scripts list")
+    
     # Admin can see all scripts, VAs only see their own
     if user_role == 'admin':
         filtered_scripts = active_scripts
+        logger.debug(f"Admin {current_user.get('username')} accessing all {len(active_scripts)} scripts")
     else:
         filtered_scripts = {
             script_id: script_data 
             for script_id, script_data in active_scripts.items() 
             if script_data.get('user_id') == user_id
         }
+        logger.debug(f"VA {current_user.get('username')} accessing {len(filtered_scripts)} own scripts")
     
     return filtered_scripts
 
@@ -911,6 +1058,8 @@ async def get_script_stats(current_user: dict = Depends(verify_token_dependency)
     """Get script statistics for the current user or all users for admin"""
     user_id = current_user.get('user_id', 'system')
     user_role = current_user.get('role', 'va')
+    
+    logger.info(f"User {current_user.get('username')} ({user_role}) requesting script statistics")
     
     # Admin can see all scripts, VAs only see their own
     if user_role == 'admin':
@@ -928,6 +1077,8 @@ async def get_script_stats(current_user: dict = Depends(verify_token_dependency)
     completed_scripts = len([s for s in user_scripts.values() if s['status'] == 'completed'])
     error_scripts = len([s for s in user_scripts.values() if s['status'] == 'error'])
     stopped_scripts = len([s for s in user_scripts.values() if s['status'] == 'stopped'])
+    
+    logger.debug(f"Script stats for {current_user.get('username')}: {total_scripts} total, {running_scripts} running")
     
     # Calculate per-script-type statistics
     script_types = {}
@@ -1032,31 +1183,38 @@ async def get_dm_responses(script_id: str, current_user: dict = Depends(verify_t
 @app.get("/api/admin/users")
 async def get_all_users(current_user: dict = Depends(admin_required_dependency)):
     """Get all users (admin only)"""
+    logger.info(f"Admin {current_user.get('username')} requesting all users")
     try:
         users = user_manager.get_all_users()
+        logger.info(f"Retrieved {len(users)} users for admin {current_user.get('username')}")
         return {'success': True, 'users': users}
     except Exception as e:
-        logger.error(f"Get users error: {e}")
+        logger.error(f"Get users error for admin {current_user.get('username')}: {e}")
         raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
 @app.post("/api/admin/users")
 async def create_user(user_data: UserCreate, current_user: dict = Depends(admin_required_dependency)):
     """Create new user (admin only)"""
+    logger.info(f"Admin {current_user.get('username')} creating user: {user_data.username} with role: {user_data.role}")
     try:
         if user_data.role not in ['admin', 'va']:
+            logger.warning(f"Invalid role attempted by admin {current_user.get('username')}: {user_data.role}")
             raise HTTPException(status_code=400, detail={'success': False, 'message': 'Invalid role'})
         
         result = user_manager.create_user(user_data.name, user_data.username, user_data.password, user_data.role)
         
         if result['success']:
             log_user_activity('user_created', f"Created user {user_data.username} with role {user_data.role}", current_user['user_id'])
+            logger.info(f"User {user_data.username} created successfully by admin {current_user.get('username')}")
+        else:
+            logger.warning(f"Failed to create user {user_data.username} by admin {current_user.get('username')}: {result.get('message')}")
         
         return result
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Create user error: {e}")
+        logger.error(f"Create user error for admin {current_user.get('username')}: {e}")
         raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
 @app.put("/api/admin/users/{user_id}")
@@ -1066,6 +1224,7 @@ async def update_user(
     current_user: dict = Depends(admin_required_dependency)
 ):
     """Update user (admin only)"""
+    logger.info(f"Admin {current_user.get('username')} updating user: {user_id}")
     try:
         updates = {}
         
@@ -1077,65 +1236,82 @@ async def update_user(
         if user_update.is_active is not None:
             updates['is_active'] = user_update.is_active
         
+        logger.debug(f"Update fields for user {user_id}: {list(updates.keys())}")
+        
         if not updates:
+            logger.warning(f"No updates provided for user {user_id} by admin {current_user.get('username')}")
             raise HTTPException(status_code=400, detail={'success': False, 'message': 'No updates provided'})
         
         result = user_manager.update_user(user_id, updates)
         
         if result['success']:
             log_user_activity('user_updated', f"Updated user {user_id}", current_user['user_id'])
+            logger.info(f"User {user_id} updated successfully by admin {current_user.get('username')}")
+        else:
+            logger.warning(f"Failed to update user {user_id} by admin {current_user.get('username')}: {result.get('message')}")
         
         return result
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Update user error: {e}")
+        logger.error(f"Update user error for admin {current_user.get('username')}: {e}")
         raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
 @app.post("/api/admin/users/{user_id}/deactivate")
 async def deactivate_user(user_id: str, current_user: dict = Depends(admin_required_dependency)):
     """Deactivate user (admin only)"""
+    logger.info(f"Admin {current_user.get('username')} deactivating user: {user_id}")
     try:
         result = user_manager.deactivate_user(user_id)
         
         if result['success']:
             log_user_activity('user_deactivated', f"Deactivated user {user_id}", current_user['user_id'])
+            logger.info(f"User {user_id} deactivated successfully by admin {current_user.get('username')}")
+        else:
+            logger.warning(f"Failed to deactivate user {user_id} by admin {current_user.get('username')}: {result.get('message')}")
         
         return result
         
     except Exception as e:
-        logger.error(f"Deactivate user error: {e}")
+        logger.error(f"Deactivate user error for admin {current_user.get('username')}: {e}")
         raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
 @app.delete("/api/admin/users/{user_id}")
 async def delete_user(user_id: str, current_user: dict = Depends(admin_required_dependency)):
     """Delete user permanently (admin only)"""
+    logger.info(f"Admin {current_user.get('username')} deleting user: {user_id}")
     try:
         result = user_manager.delete_user(user_id)
         
         if result['success']:
             log_user_activity('user_deleted', f"Deleted user {user_id}", current_user['user_id'])
+            logger.info(f"User {user_id} deleted successfully by admin {current_user.get('username')}")
+        else:
+            logger.warning(f"Failed to delete user {user_id} by admin {current_user.get('username')}: {result.get('message')}")
         
         return result
         
     except Exception as e:
-        logger.error(f"Delete user error: {e}")
+        logger.error(f"Delete user error for admin {current_user.get('username')}: {e}")
         raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
 @app.get("/api/admin/activity-logs")
 async def get_activity_logs(current_user: dict = Depends(admin_required_dependency)):
     """Get activity logs (admin only)"""
+    logger.info(f"Admin {current_user.get('username')} requesting activity logs")
     try:
         logs = user_manager.get_activity_logs()
+        logger.info(f"Retrieved {len(logs)} activity logs for admin {current_user.get('username')}")
         return {'success': True, 'logs': logs}
     except Exception as e:
-        logger.error(f"Get activity logs error: {e}")
+        logger.error(f"Get activity logs error for admin {current_user.get('username')}: {e}")
         raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
 @app.get("/api/admin/stats")
 async def get_admin_stats(current_user: dict = Depends(admin_required_dependency)):
     """Get admin dashboard statistics"""
+    logger.info(f"Admin {current_user.get('username')} requesting dashboard statistics")
     try:
         users = user_manager.get_all_users()
         logs = user_manager.get_activity_logs(50)
@@ -1150,6 +1326,8 @@ async def get_admin_stats(current_user: dict = Depends(admin_required_dependency
             'recent_activity': logs[:10]
         }
         
+        logger.debug(f"Admin stats generated for {current_user.get('username')}: {stats['total_users']} users, {stats['total_scripts']} scripts")
+        
         return {'success': True, 'stats': stats}
     except Exception as e:
         logger.error(f"Get admin stats error: {e}")
@@ -1159,22 +1337,141 @@ async def get_admin_stats(current_user: dict = Depends(admin_required_dependency
 @app.get("/api/instagram-accounts")
 async def get_instagram_accounts(current_user: dict = Depends(verify_token_dependency)):
     """Get all Instagram accounts"""
+    logger.info(f"User {current_user.get('username')} requesting all Instagram accounts")
     try:
         accounts = instagram_accounts_manager.get_all_accounts()
+        logger.info(f"Retrieved {len(accounts)} Instagram accounts for user {current_user.get('username')}")
         return {'success': True, 'accounts': accounts}
     except Exception as e:
-        logger.error(f"Get Instagram accounts error: {e}")
+        logger.error(f"Get Instagram accounts error for user {current_user.get('username')}: {e}")
         raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
 
 @app.get("/api/instagram-accounts/active")
 async def get_active_instagram_accounts(current_user: dict = Depends(verify_token_dependency)):
     """Get only active Instagram accounts"""
+    logger.info(f"User {current_user.get('username')} requesting active Instagram accounts")
     try:
         accounts = instagram_accounts_manager.get_active_accounts()
+        logger.info(f"Retrieved {len(accounts)} active Instagram accounts for user {current_user.get('username')}")
         return {'success': True, 'accounts': accounts}
     except Exception as e:
-        logger.error(f"Get active Instagram accounts error: {e}")
+        logger.error(f"Get active Instagram accounts error for user {current_user.get('username')}: {e}")
         raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
+
+@app.post("/api/admin/instagram-accounts")
+async def create_instagram_account(
+    account_data: dict,
+    current_user: dict = Depends(verify_token_dependency)
+):
+    """Create a new Instagram account (Admin only)"""
+    if current_user.get('role') != 'admin':
+        logger.warning(f"Non-admin user {current_user.get('username')} attempted to create Instagram account")
+        raise HTTPException(status_code=403, detail={'success': False, 'message': 'Admin access required'})
+    
+    username = account_data.get('username', '').strip()
+    logger.info(f"Admin {current_user.get('username')} creating Instagram account: {username}")
+    
+    try:
+        password = account_data.get('password', '').strip()
+        email = account_data.get('email', '').strip()
+        phone = account_data.get('phone', '').strip()
+        notes = account_data.get('notes', '').strip()
+        
+        if not username or not password:
+            logger.warning(f"Invalid Instagram account creation attempt by admin {current_user.get('username')}: missing username or password")
+            raise HTTPException(status_code=400, detail={'success': False, 'message': 'Username and password are required'})
+        
+        new_account = instagram_accounts_manager.add_account(username, password, email, phone, notes)
+        logger.info(f"Instagram account {username} created successfully by admin {current_user.get('username')}")
+        return {'success': True, 'message': 'Account created successfully', 'account': new_account}
+    
+    except ValueError as e:
+        logger.warning(f"Instagram account creation failed for admin {current_user.get('username')}: {e}")
+        raise HTTPException(status_code=400, detail={'success': False, 'message': str(e)})
+    except Exception as e:
+        logger.error(f"Create Instagram account error for admin {current_user.get('username')}: {e}")
+        raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
+
+@app.put("/api/admin/instagram-accounts/{account_id}")
+async def update_instagram_account(
+    account_id: str,
+    updates: dict,
+    current_user: dict = Depends(verify_token_dependency)
+):
+    """Update an Instagram account (Admin only)"""
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail={'success': False, 'message': 'Admin access required'})
+    
+    try:
+        success = instagram_accounts_manager.update_account(account_id, updates)
+        if success:
+            return {'success': True, 'message': 'Account updated successfully'}
+        else:
+            raise HTTPException(status_code=404, detail={'success': False, 'message': 'Account not found'})
+    except Exception as e:
+        logger.error(f"Update Instagram account error: {e}")
+        raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
+
+@app.delete("/api/admin/instagram-accounts/{account_id}")
+async def delete_instagram_account(
+    account_id: str,
+    current_user: dict = Depends(verify_token_dependency)
+):
+    """Delete an Instagram account (Admin only)"""
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail={'success': False, 'message': 'Admin access required'})
+    
+    try:
+        success = instagram_accounts_manager.delete_account(account_id)
+        if success:
+            return {'success': True, 'message': 'Account deleted successfully'}
+        else:
+            raise HTTPException(status_code=404, detail={'success': False, 'message': 'Account not found'})
+    except Exception as e:
+        logger.error(f"Delete Instagram account error: {e}")
+        raise HTTPException(status_code=500, detail={'success': False, 'message': 'Internal server error'})
+
+@app.post("/api/admin/instagram-accounts/import")
+async def import_instagram_accounts(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(verify_token_dependency)
+):
+    """Import Instagram accounts from file (Admin only)"""
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail={'success': False, 'message': 'Admin access required'})
+    
+    try:
+        # Save uploaded file temporarily
+        temp_file_path = f"temp_import_{uuid.uuid4()}.{file.filename.split('.')[-1]}"
+        with open(temp_file_path, "wb") as temp_file:
+            content = await file.read()
+            temp_file.write(content)
+        
+        # Import accounts
+        result = instagram_accounts_manager.import_accounts_from_file(temp_file_path)
+        
+        # Clean up temp file
+        import os
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+        
+        return {
+            'success': True, 
+            'message': f"Import completed. Added: {result['added_count']}, Skipped: {result['skipped_count']}", 
+            'added_count': result['added_count'],
+            'skipped_count': result['skipped_count']
+        }
+    
+    except Exception as e:
+        logger.error(f"Import Instagram accounts error: {e}")
+        # Clean up temp file on error
+        try:
+            import os
+            if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+        except:
+            pass
+        raise HTTPException(status_code=500, detail={'success': False, 'message': str(e)})
 
 # File validation endpoints
 @app.post("/api/daily-post/validate")
@@ -1209,7 +1506,12 @@ async def validate_daily_post_files(
     except Exception as e:
         raise HTTPException(status_code=500, detail={"valid": False, "errors": [str(e)]})
 
+# Main entry point for running the app directly
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    logger.info("Starting FastAPI Instagram Automation Backend")
+    logger.info("Application startup complete - all components initialized")
+    logger.info("Server starting on host: 0.0.0.0, port: 5000")
+    
+    # Force the port to 5000 for local development
+    uvicorn.run(app, host="0.0.0.0", port=5000)

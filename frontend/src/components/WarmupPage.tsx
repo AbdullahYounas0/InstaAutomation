@@ -35,6 +35,47 @@ const WarmupPage: React.FC = () => {
     }
   });
 
+  // Function definitions first
+  const loadAvailableAccounts = useCallback(async () => {
+    try {
+      const result = await authService.getActiveInstagramAccounts();
+      if (result.success && result.accounts) {
+        setAvailableAccounts(result.accounts);
+      }
+    } catch (error) {
+      console.error('Error loading accounts:', error);
+    }
+  }, []);
+
+  const checkForRunningScripts = useCallback(async () => {
+    try {
+      const response = await axios.get(getApiUrl('/scripts/running'), {
+        headers: getApiHeaders()
+      });
+      
+      console.log('All running scripts:', response.data.scripts);
+      const runningWarmupScripts = response.data.scripts.filter((s: any) => s.type === 'warmup');
+      console.log('Filtered warmup scripts:', runningWarmupScripts);
+      
+      if (runningWarmupScripts.length > 0) {
+        const script = runningWarmupScripts[0];
+        console.log('Restoring warmup script state:', script);
+        setScriptId(script.id);
+        setIsRunning(true);
+        setScriptStatus('running');
+        // Load the script's configuration if available
+        if (script.config) {
+          setSelectedAccountIds(script.config.selected_account_ids || []);
+        }
+        console.log('Found running warmup script:', script.id);
+      } else {
+        console.log('No running warmup scripts found');
+      }
+    } catch (error) {
+      console.error('Error checking running scripts:', error);
+    }
+  }, []);
+
   // Initial setup effect
   useEffect(() => {
     // Set up CAPTCHA detection
@@ -50,7 +91,7 @@ const WarmupPage: React.FC = () => {
     // Check for running scripts first, then load accounts
     checkForRunningScripts();
     loadAvailableAccounts();
-  }, []); // Only run once on mount
+  }, [checkForRunningScripts, loadAvailableAccounts]); // Add both functions to dependencies
 
   // Separate effect for polling when script is running
   useEffect(() => {
@@ -76,52 +117,6 @@ const WarmupPage: React.FC = () => {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scriptId, isRunning, isPaused]);
-
-  const loadAvailableAccounts = async () => {
-    try {
-      const result = await authService.getActiveInstagramAccounts();
-      if (result.success && result.accounts) {
-        setAvailableAccounts(result.accounts);
-      }
-    } catch (error) {
-      console.error('Error loading accounts:', error);
-    }
-  };
-
-  const checkForRunningScripts = async () => {
-    try {
-      const response = await axios.get(getApiUrl('/scripts/running'), {
-        headers: getApiHeaders()
-      });
-      
-      console.log('All running scripts:', response.data.scripts);
-      const runningWarmupScripts = response.data.scripts.filter((s: any) => s.type === 'warmup');
-      console.log('Filtered warmup scripts:', runningWarmupScripts);
-      
-      if (runningWarmupScripts.length > 0) {
-        const script = runningWarmupScripts[0];
-        console.log('Restoring warmup script state:', script);
-        setScriptId(script.id);
-        setIsRunning(true);
-        setScriptStatus('running');
-        // Load the script's configuration if available
-        if (script.config) {
-          setSelectedAccountIds(script.config.selected_account_ids || []);
-        }
-        console.log('Found running warmup script:', script.id);
-        
-        // Immediately fetch logs and status for the restored script
-        setTimeout(() => {
-          fetchLogs();
-          checkScriptStatus();
-        }, 100);
-      } else {
-        console.log('No running warmup scripts found');
-      }
-    } catch (error) {
-      console.error('Error checking running scripts:', error);
-    }
-  };
 
   // Remove the handleCaptchaPause function since backend handles the delay
 
@@ -231,7 +226,6 @@ const WarmupPage: React.FC = () => {
     try {
       setIsRunning(true);
       setScriptStatus('running');
-      const token = authService.getToken();
       const response = await axios.post(getApiUrl('/warmup/start'), data, {
         headers: getMultipartHeaders(),
       });

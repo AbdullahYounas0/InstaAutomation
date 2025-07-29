@@ -13,6 +13,18 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 from openai import OpenAI
 import time
 
+# Configure logging for Instagram DM Automation
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('logs/instagram_dm_automation.log'),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger('InstagramDMAutomation')
+
 # Configuration constants
 INSTAGRAM_URL = "https://www.instagram.com/"
 MAX_PARALLEL_ACCOUNTS = 10
@@ -48,17 +60,38 @@ used_proxies = set()
 
 class DMAutomationEngine:
     def __init__(self, log_callback=None, stop_callback=None, visual_mode=False):
-        self.log_callback = log_callback or print
+        self.log_callback = log_callback or self.default_log
         self.stop_callback = stop_callback or (lambda: False)
         self.visual_mode = visual_mode  # Whether to show browsers
         self.client = None
         self.sent_dms = []
         self.positive_responses = []
         
+        # Initialize logging
+        logger.info("DMAutomationEngine initialized")
+        logger.info(f"Visual mode: {visual_mode}")
+        
+    def default_log(self, message, level="INFO"):
+        """Default logging function"""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_message = f"[{timestamp}] [{level}] {message}"
+        print(log_message)
+        
+        # Also log to the logger
+        if level == "ERROR":
+            logger.error(message)
+        elif level == "WARNING" or level == "WARN":
+            logger.warning(message)
+        elif level == "SUCCESS":
+            logger.info(f"SUCCESS: {message}")
+        else:
+            logger.info(message)
+        
     def log(self, message, level="INFO"):
         """Log message with timestamp"""
         timestamp = datetime.now().strftime("%H:%M:%S")
         formatted_message = f"[{timestamp}] [{level}] {message}"
+        logger.debug(f"Logging message: {message} (Level: {level})")
         self.log_callback(formatted_message, level)
 
     async def update_visual_status(self, page, status_text, account_number, step=None):

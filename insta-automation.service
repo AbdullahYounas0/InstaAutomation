@@ -1,0 +1,21 @@
+[Unit]
+Description=Instagram Automation FastAPI Backend
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/instaAutomation/backend
+Environment=PATH=/var/www/instaAutomation/venv/bin
+Environment=ENVIRONMENT=production
+ExecStart=/var/www/instaAutomation/venv/bin/python start_production.py
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

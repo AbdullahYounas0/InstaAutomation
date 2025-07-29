@@ -5,6 +5,19 @@ import random
 import time
 import logging
 import os
+from datetime import datetime
+
+# Configure logging for Instagram Warmup Automation
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('logs/instagram_warmup.log'),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger('InstagramWarmup')
 
 # Default Configuration
 DEFAULT_WARMUP_DURATION_MINUTES = 300
@@ -16,6 +29,7 @@ DEFAULT_MAX_CONCURRENT_BROWSERS = 10
 async def human_like_delay(delay_range=DEFAULT_ACTIVITY_DELAY_SECONDS, stop_callback=None):
     """Introduces a human-like delay between actions with stop signal checking."""
     delay_seconds = random.uniform(*delay_range)
+    logger.debug(f"Human-like delay: {delay_seconds:.2f} seconds")
     
     # If delay is short, just sleep normally
     if delay_seconds <= 1:
@@ -28,6 +42,7 @@ async def human_like_delay(delay_range=DEFAULT_ACTIVITY_DELAY_SECONDS, stop_call
     
     while elapsed < delay_seconds:
         if stop_callback and stop_callback():
+            logger.debug("Stop signal received during delay")
             return  # Exit immediately if stop requested
         
         sleep_time = min(check_interval, delay_seconds - elapsed)
@@ -36,7 +51,13 @@ async def human_like_delay(delay_range=DEFAULT_ACTIVITY_DELAY_SECONDS, stop_call
 
 async def human_like_typing(page, selector, text):
     """Types text into a field with a human-like delay between characters."""
-    await page.type(selector, text, delay=random.uniform(50, 150))
+    logger.debug(f"Human-like typing: '{text[:20]}...'")
+    try:
+        await page.type(selector, text, delay=random.uniform(50, 150))
+        logger.debug("Human-like typing completed successfully")
+    except Exception as e:
+        logger.error(f"Error during human-like typing: {str(e)}")
+        raise
 
 async def human_like_scroll(page):
     """Performs a human-like scroll action on the page."""
@@ -46,9 +67,16 @@ async def human_like_scroll(page):
     step_amount = scroll_amount / steps
     step_delay = scroll_duration / steps
 
-    for _ in range(steps):
-        await page.evaluate(f"window.scrollBy(0, {step_amount})")
-        await asyncio.sleep(step_delay)
+    logger.debug(f"Human-like scroll: {scroll_amount}px in {steps} steps over {scroll_duration:.2f}s")
+    
+    try:
+        for _ in range(steps):
+            await page.evaluate(f"window.scrollBy(0, {step_amount})")
+            await asyncio.sleep(step_delay)
+        logger.debug("Human-like scroll completed successfully")
+    except Exception as e:
+        logger.error(f"Error during human-like scroll: {str(e)}")
+        raise
     await asyncio.sleep(random.uniform(0.5, 1.5))
 
 async def is_verification_required(page):
@@ -211,19 +239,71 @@ async def login(context: BrowserContext, username, password, log_callback=None):
             else:
                 if log_callback:
                     log_callback(f"Login for {username} did not directly land on home page. Checking for intermediate prompts.")
+                
+                # Try multiple approaches to handle post-login dialogs
+                handled_dialog = False
+                
+                # Approach 1: Look for "Not now" button with extended timeout and multiple selectors
+                not_now_selectors = [
+                    'div[role="button"]:has-text("Not now")',
+                    'button:has-text("Not now")',
+                    'div[role="button"]:has-text("Not Now")',
+                    'button:has-text("Not Now")',
+                    '[role="button"]:has-text("Not now")',
+                    '[role="button"]:has-text("Not Now")',
+                    '//button[contains(text(), "Not now")]',
+                    '//div[@role="button" and contains(text(), "Not now")]'
+                ]
+                
+                for selector in not_now_selectors:
+                    try:
+                        await page.wait_for_timeout(2000)  # Wait 2 seconds between attempts
+                        not_now_button = await page.wait_for_selector(selector, timeout=5000)
+                        if not_now_button:
+                            await not_now_button.click()
+                            if log_callback:
+                                log_callback(f"{username}: ✅ Clicked 'Not now' using selector: {selector}")
+                            handled_dialog = True
+                            break
+                    except Exception:
+                        continue
+                
+                # Approach 2: Look for home elements if dialog handling failed
+                if not handled_dialog:
+                    if log_callback:
+                        log_callback(f"{username}: No 'Not now' button found, checking if already on home page...")
+                
+                # Wait for home page elements with extended timeout
                 try:
-                    not_now_button = await page.wait_for_selector('div[role="button"]:has-text("Not now")', timeout=10000)
-                    await not_now_button.click()
-                    if log_callback:
-                        log_callback(f"{username}: Clicked 'Not now' on prompt.")
                     await human_like_delay()
-                    await page.wait_for_selector('a[href="/"]', timeout=10000)
-                    if log_callback:
-                        log_callback(f"Successfully logged in with {username} after handling prompt.")
-                    return page
+                    home_selectors = [
+                        'a[href="/"]',
+                        '[data-testid="home-link"]',
+                        'svg[aria-label="Home"]',
+                        'div[role="main"]'
+                    ]
+                    
+                    home_found = False
+                    for selector in home_selectors:
+                        try:
+                            await page.wait_for_selector(selector, timeout=8000)
+                            home_found = True
+                            break
+                        except Exception:
+                            continue
+                    
+                    if home_found or 'instagram.com' in page.url:
+                        if log_callback:
+                            log_callback(f"{username}: ✅ Successfully logged in and reached home page.")
+                        return page
+                    else:
+                        if log_callback:
+                            log_callback(f"{username}: ⚠️ Login may have succeeded but couldn't verify home page. Current URL: {page.url}")
+                        return page  # Return page anyway, activities will handle further navigation
+                        
                 except Exception as e:
                     if log_callback:
-                        log_callback(f"Login failed for {username}: Could not find 'Not now' button or expected home element after login. Current URL: {page.url} Error: {e}", "ERROR")
+                        log_callback(f"Login verification failed for {username}: Could not confirm successful login. Current URL: {page.url} Error: {e}", "ERROR")
                     return None
     except Exception as e:
         if log_callback:
@@ -505,48 +585,54 @@ async def perform_activities(page, username, duration_minutes, activities, timin
 async def worker(playwright: Playwright, account_queue: asyncio.Queue, config, log_callback=None, stop_callback=None):
     """
     Worker task to process accounts. Each worker launches a browser and processes
-    accounts from the queue until it's empty.
+    accounts from the queue until it's empty. Each account is processed in isolation.
     """
     browser = None
-    context = None
-    page = None
     current_username = "unknown_user"
+    accounts_processed = 0
+    accounts_successful = 0
+    accounts_failed = 0
 
     try:
         browser = await playwright.chromium.launch(
             headless=not config.get('visual_mode', False),
             channel="chrome"
         )
+        
+        if log_callback:
+            log_callback("Worker started - processing accounts from queue.")
+        
         while True:
             # Check if stop was requested
             if stop_callback and stop_callback():
                 if log_callback:
-                    log_callback("Worker stopping due to user request.")
-                break
-            
-            # Check if browser is still connected (closed detection)
-            try:
-                if browser and not browser.is_connected():
-                    if log_callback:
-                        log_callback(f"Browser was closed manually for {current_username} - stopping worker")
-                    break
-            except:
-                # If we can't check browser status, assume it's closed
-                if log_callback:
-                    log_callback(f"Browser connection lost for {current_username} - stopping worker") 
+                    log_callback(f"Worker stopping due to user request. Processed: {accounts_processed}, Successful: {accounts_successful}, Failed: {accounts_failed}")
                 break
                 
             try:
                 username, password = account_queue.get_nowait()
                 current_username = username
+                accounts_processed += 1
             except asyncio.QueueEmpty:
                 if log_callback:
-                    log_callback("Account queue is empty. Worker exiting.")
+                    log_callback(f"Account queue is empty. Worker exiting. Final stats - Processed: {accounts_processed}, Successful: {accounts_successful}, Failed: {accounts_failed}")
                 break
 
-            context = await browser.new_context()
+            # Process each account in complete isolation
+            context = None
+            page = None
+            account_success = False
+            
             try:
+                if log_callback:
+                    log_callback(f"[Account {accounts_processed}] Starting automation for {current_username}")
+                
+                # Create new context for this account
+                context = await browser.new_context()
+                
+                # Attempt login
                 page = await login(context, username, password, log_callback)
+                
                 if page:
                     # Check for stop signal before starting activities
                     if stop_callback and stop_callback():
@@ -554,6 +640,7 @@ async def worker(playwright: Playwright, account_queue: asyncio.Queue, config, l
                             log_callback(f"Worker stopping for {current_username} due to user request before activities.")
                         break
                     
+                    # Perform activities
                     await perform_activities(
                         page, username, 
                         config['warmup_duration'], 
@@ -562,31 +649,55 @@ async def worker(playwright: Playwright, account_queue: asyncio.Queue, config, l
                         log_callback, 
                         stop_callback
                     )
-                else:
+                    
+                    account_success = True
+                    accounts_successful += 1
                     if log_callback:
-                        log_callback(f"Login failed for {current_username}, skipping activities.")
+                        log_callback(f"[Account {accounts_processed}] ✅ Successfully completed automation for {current_username}")
+                else:
+                    accounts_failed += 1
+                    if log_callback:
+                        log_callback(f"[Account {accounts_processed}] ❌ Login failed for {current_username}, skipping activities.")
+                        
             except Exception as e:
+                accounts_failed += 1
                 if log_callback:
-                    log_callback(f"Unhandled error in worker for {current_username}: {e}", "ERROR")
-                # Continue to next account even if current one fails
+                    log_callback(f"[Account {accounts_processed}] ❌ Error during automation for {current_username}: {str(e)}", "ERROR")
+                # Log the error but continue with next account
+                
             finally:
+                # Always clean up the context for this account
                 if context:
                     try:
                         await context.close()
                         if log_callback:
-                            log_callback(f"Closed browser context for {current_username}.")
+                            log_callback(f"[Account {accounts_processed}] Closed browser context for {current_username}.")
                     except Exception as e:
                         if log_callback:
-                            log_callback(f"Error closing context for {current_username}: {e}", "ERROR")
+                            log_callback(f"[Account {accounts_processed}] Error closing context for {current_username}: {e}", "ERROR")
+                
+                # Mark task as done
                 account_queue.task_done()
+                
+                # Add delay between accounts to prevent rate limiting
+                if accounts_processed > 0:
+                    delay = random.uniform(2, 5)  # 2-5 second delay between accounts
+                    if log_callback:
+                        log_callback(f"[Account {accounts_processed}] Waiting {delay:.1f}s before next account...")
+                    await asyncio.sleep(delay)
+                
     except Exception as e:
         if log_callback:
             log_callback(f"Worker encountered a critical error: {e}", "ERROR")
     finally:
         if browser:
-            await browser.close()
-            if log_callback:
-                log_callback("Browser closed by worker.")
+            try:
+                await browser.close()
+                if log_callback:
+                    log_callback(f"Browser closed by worker. Final stats - Processed: {accounts_processed}, Successful: {accounts_successful}, Failed: {accounts_failed}")
+            except Exception as e:
+                if log_callback:
+                    log_callback(f"Error closing browser: {e}", "ERROR")
 
 async def run_warmup_automation(
     script_id,
@@ -601,11 +712,37 @@ async def run_warmup_automation(
     """
     Main function to run the Instagram warmup automation.
     """
+    logger.info(f"Starting warmup automation - Script ID: {script_id}")
+    logger.info(f"Configuration - Duration: {warmup_duration} minutes, Visual mode: {visual_mode}")
+    
+    def default_log(message, level="INFO"):
+        """Default logging function"""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_message = f"[{timestamp}] [{level}] {message}"
+        print(log_message)
+        
+        # Also log to the logger
+        if level == "ERROR":
+            logger.error(message)
+        elif level == "WARNING" or level == "WARN":
+            logger.warning(message)
+        elif level == "SUCCESS":
+            logger.info(f"SUCCESS: {message}")
+        else:
+            logger.info(message)
+    
+    # Use default log if no callback provided
+    if not log_callback:
+        log_callback = default_log
+    
     try:
         # Load accounts from file
+        logger.info(f"Loading accounts from file: {accounts_file}")
         if accounts_file.endswith('.csv'):
+            logger.debug("Reading CSV file")
             df = pd.read_csv(accounts_file)
         else:
+            logger.debug("Reading Excel file")
             df = pd.read_excel(accounts_file)
         
         # Standardize column names
@@ -613,22 +750,28 @@ async def run_warmup_automation(
         
         # Validate required columns
         if 'Username' not in df.columns or 'Password' not in df.columns:
+            logger.error("Missing required columns in accounts file")
             raise ValueError("Accounts file must contain 'Username' and 'Password' columns")
         
         # Filter out empty rows
         accounts = []
         for _, row in df.iterrows():
             if pd.notna(row['Username']) and pd.notna(row['Password']):
-                accounts.append((str(row['Username']).strip(), str(row['Password']).strip()))
+                username = str(row['Username']).strip()
+                accounts.append((username, str(row['Password']).strip()))
+                logger.debug(f"Loaded account: {username}")
         
         if not accounts:
+            logger.error("No valid accounts found in the file")
             raise ValueError("No valid accounts found in the file")
         
+        logger.info(f"Successfully loaded {len(accounts)} accounts from file")
         if log_callback:
             log_callback(f"Loaded {len(accounts)} accounts from {accounts_file}")
         
         # Set default activities and timing if not provided
         if activities is None:
+            logger.debug("Using default activities configuration")
             activities = {
                 'feed_scroll': True,
                 'watch_reels': True,

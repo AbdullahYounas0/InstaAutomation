@@ -7,7 +7,7 @@
 			"command": "powershell",
 			"args": [
 				"-Command",
-				"Start-Process powershell -ArgumentList '-Command', 'cd frontend; npm start' -WindowStyle Normal; Start-Process powershell -ArgumentList '-Command', 'cd backend; $env:PORT=5003; python app.py' -WindowStyle Normal"
+				"Start-Process powershell -ArgumentList '-Command', 'cd frontend; npm start' -WindowStyle Normal; Start-Process powershell -ArgumentList '-Command', 'cd backend; $env:PORT=5000; python app.py' -WindowStyle Normal"
 			],
 			"group": "build",
 			"problemMatcher": [],
@@ -19,7 +19,7 @@
 			"command": "powershell",
 			"args": [
 				"-Command",
-				"$env:PORT=5003; python app.py"
+				"$env:PORT=5000; python app.py"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}/backend"

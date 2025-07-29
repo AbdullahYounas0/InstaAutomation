@@ -21,8 +21,10 @@ export const getMultipartHeaders = () => {
   };
 };
 
-export default {
+const apiUtils = {
   getApiHeaders,
   getApiUrl,
   getMultipartHeaders,
 };
+
+export default apiUtils;

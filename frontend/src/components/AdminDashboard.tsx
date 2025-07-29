@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService, User, ActivityLog, AdminStats, InstagramAccount, ScriptLog } from '../services/authService';
+import { getApiUrl, getApiHeaders } from '../utils/apiUtils';
 import './AdminDashboard.css';
 
 const AdminDashboard: React.FC = () => {
@@ -58,27 +59,11 @@ const AdminDashboard: React.FC = () => {
   
   const navigate = useNavigate();
 
-  useEffect(() => {
-    // Verify admin access
-    const user = authService.getCurrentUser();
-    if (!user || user.role !== 'admin') {
-      navigate('/login');
-      return;
-    }
-
-    loadData();
-  }, [navigate]);
-
-  // Reload script logs when selected user changes
-  useEffect(() => {
-    if (activeTab === 'logs') {
-      loadScriptLogs();
-    }
-  }, [selectedUserId, activeTab]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
+    console.log('AdminDashboard: Starting loadData...');
     setLoading(true);
     try {
+      console.log('AdminDashboard: Making parallel API calls...');
       const [usersRes, logsRes, statsRes, accountsRes, scriptLogsRes] = await Promise.all([
         authService.getUsers(),
         authService.getActivityLogs(),
@@ -87,40 +72,117 @@ const AdminDashboard: React.FC = () => {
         authService.getScriptLogs(selectedUserId || undefined, 100)
       ]);
 
-      if (usersRes.success && usersRes.users) setUsers(usersRes.users);
-      if (logsRes.success && logsRes.logs) {
-        console.log('Received logs data:', logsRes.logs.slice(0, 3)); // Debug: check first 3 logs
-        setLogs(logsRes.logs);
+      console.log('AdminDashboard: API responses received:', { 
+        usersSuccess: usersRes.success, 
+        logsSuccess: logsRes.success,
+        statsSuccess: statsRes.success,
+        accountsSuccess: accountsRes.success
+      });
+
+      if (usersRes.success && usersRes.users) {
+        console.log('AdminDashboard: Setting users:', usersRes.users.length, 'users');
+        setUsers(usersRes.users);
+      } else {
+        console.error('AdminDashboard: Failed to load users:', usersRes.message);
       }
-      if (statsRes.success && statsRes.stats) setStats(statsRes.stats);
-      if (accountsRes.success && accountsRes.accounts) setInstagramAccounts(accountsRes.accounts);
-      if (scriptLogsRes.success && scriptLogsRes.script_logs) setScriptLogs(scriptLogsRes.script_logs);
+
+      if (logsRes.success) {
+        console.log('AdminDashboard: Setting activity logs:', logsRes.logs?.length || 0, 'logs');
+        setLogs(logsRes.logs || []);
+      } else {
+        console.error('AdminDashboard: Failed to load activity logs:', logsRes.message);
+      }
+
+      if (statsRes.success && statsRes.stats) {
+        console.log('AdminDashboard: Setting admin stats:', statsRes.stats);
+        setStats(statsRes.stats);
+      } else {
+        console.error('AdminDashboard: Failed to load admin stats:', statsRes.message);
+      }
+
+      if (accountsRes.success && accountsRes.accounts) {
+        console.log('AdminDashboard: Setting Instagram accounts:', accountsRes.accounts.length, 'accounts');
+        setInstagramAccounts(accountsRes.accounts);
+      } else {
+        console.error('AdminDashboard: Failed to load Instagram accounts:', accountsRes.message);
+      }
+
+      if (scriptLogsRes.success && scriptLogsRes.script_logs && Array.isArray(scriptLogsRes.script_logs)) {
+        console.log('AdminDashboard: Setting script logs:', scriptLogsRes.script_logs.length, 'logs');
+        setScriptLogs(scriptLogsRes.script_logs);
+      } else {
+        console.error('AdminDashboard: Failed to load script logs:', scriptLogsRes.message || 'Invalid script logs data');
+        setScriptLogs([]);
+      }
     } catch (error) {
-      console.error('Error loading data:', error);
-      setError('Failed to load data');
+      console.error('AdminDashboard: Error loading data:', error);
     } finally {
       setLoading(false);
+      console.log('AdminDashboard: loadData completed');
     }
-  };
+  }, [selectedUserId]);
 
-  const loadScriptLogs = async () => {
+  useEffect(() => {
+    console.log('AdminDashboard: Component mounted, checking admin access...');
+    // Verify admin access
+    const user = authService.getCurrentUser();
+    console.log('AdminDashboard: Current user:', user);
+    
+    if (!user || user.role !== 'admin') {
+      console.log('AdminDashboard: Access denied, redirecting to login');
+      navigate('/login');
+      return;
+    }
+
+    console.log('AdminDashboard: Admin access verified, loading data...');
+    loadData();
+  }, [navigate, loadData]);
+
+  const loadScriptLogs = useCallback(async () => {
+    console.log('AdminDashboard: Loading script logs for user:', selectedUserId || 'all users');
     try {
       const scriptLogsRes = await authService.getScriptLogs(selectedUserId || undefined, 100);
-      if (scriptLogsRes.success && scriptLogsRes.script_logs) {
+      console.log('AdminDashboard: Script logs response:', scriptLogsRes);
+      
+      if (scriptLogsRes.success && scriptLogsRes.script_logs && Array.isArray(scriptLogsRes.script_logs)) {
+        console.log('AdminDashboard: Script logs loaded successfully:', scriptLogsRes.script_logs.length, 'logs');
         setScriptLogs(scriptLogsRes.script_logs);
+      } else {
+        console.error('AdminDashboard: Failed to load script logs:', scriptLogsRes.message || 'Invalid script logs data');
+        setScriptLogs([]); // Set empty array as fallback
       }
     } catch (error) {
-      console.error('Error loading script logs:', error);
+      console.error('AdminDashboard: Error loading script logs:', error);
     }
-  };
+  }, [selectedUserId]);
+
+  // Reload script logs when selected user changes
+  useEffect(() => {
+    console.log('AdminDashboard: Tab or selectedUserId changed:', { activeTab, selectedUserId });
+    if (activeTab === 'logs') {
+      console.log('AdminDashboard: Loading script logs for user:', selectedUserId || 'all users');
+      loadScriptLogs();
+    }
+  }, [selectedUserId, activeTab, loadScriptLogs]);
 
   const handleLogout = async () => {
-    await authService.logout();
-    navigate('/login');
+    console.log('AdminDashboard: Logout initiated');
+    try {
+      await authService.logout();
+      console.log('AdminDashboard: Logout successful, navigating to login');
+      navigate('/login');
+    } catch (error) {
+      console.error('AdminDashboard: Logout error:', error);
+    }
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('AdminDashboard: Creating user with data:', { 
+      name: newUser.name, 
+      username: newUser.username, 
+      role: newUser.role 
+    });
     setLoading(true);
 
     try {
@@ -131,76 +193,118 @@ const AdminDashboard: React.FC = () => {
         newUser.role
       );
 
+      console.log('AdminDashboard: Create user result:', result);
+
       if (result.success) {
+        console.log('AdminDashboard: User created successfully, clearing form and reloading data');
         setShowCreateUser(false);
         setNewUser({ name: '', username: '', password: '', role: 'va' });
         loadData(); // Refresh data
       } else {
+        console.error('AdminDashboard: Failed to create user:', result.message);
         setError(result.message || 'Failed to create user');
       }
     } catch (error) {
+      console.error('AdminDashboard: Create user network error:', error);
       setError('Network error');
     } finally {
       setLoading(false);
+      console.log('AdminDashboard: Create user operation completed');
     }
   };
 
   const handleEditUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingUser) return;
+    if (!editingUser) {
+      console.error('AdminDashboard: No user selected for editing');
+      return;
+    }
+
+    console.log('AdminDashboard: Editing user:', editingUser.id, 'with updates:', {
+      name: editForm.name,
+      is_active: editForm.is_active,
+      passwordChanged: !!editForm.password
+    });
 
     setLoading(true);
     try {
       const updates: any = { name: editForm.name, is_active: editForm.is_active };
       if (editForm.password) {
         updates.password = editForm.password;
+        console.log('AdminDashboard: Password will be updated');
       }
 
       const result = await authService.updateUser(editingUser.id, updates);
+      console.log('AdminDashboard: Edit user result:', result);
 
       if (result.success) {
+        console.log('AdminDashboard: User updated successfully, clearing form and reloading data');
         setEditingUser(null);
         loadData(); // Refresh data
       } else {
+        console.error('AdminDashboard: Failed to update user:', result.message);
         setError(result.message || 'Failed to update user');
       }
     } catch (error) {
+      console.error('AdminDashboard: Edit user network error:', error);
       setError('Network error');
     } finally {
       setLoading(false);
+      console.log('AdminDashboard: Edit user operation completed');
     }
   };
 
   const handleDeactivateUser = async (userId: string) => {
-    if (!window.confirm('Are you sure you want to deactivate this user?')) return;
+    console.log('AdminDashboard: Deactivating user:', userId);
+    if (!window.confirm('Are you sure you want to deactivate this user?')) {
+      console.log('AdminDashboard: User deactivation cancelled');
+      return;
+    }
 
+    console.log('AdminDashboard: User confirmed deactivation, proceeding...');
     try {
       const result = await authService.deactivateUser(userId);
+      console.log('AdminDashboard: Deactivate user result:', result);
+      
       if (result.success) {
+        console.log('AdminDashboard: User deactivated successfully, reloading data');
         loadData(); // Refresh data
       } else {
+        console.error('AdminDashboard: Failed to deactivate user:', result.message);
         setError(result.message || 'Failed to deactivate user');
       }
     } catch (error) {
+      console.error('AdminDashboard: Deactivate user network error:', error);
       setError('Network error');
     }
   };
 
   const handleDeleteUser = async (userId: string, username: string) => {
-    if (!window.confirm(`Are you sure you want to permanently delete user "${username}"? This action cannot be undone.`)) return;
+    console.log('AdminDashboard: Deleting user:', userId, 'username:', username);
+    if (!window.confirm(`Are you sure you want to permanently delete user "${username}"? This action cannot be undone.`)) {
+      console.log('AdminDashboard: User deletion cancelled');
+      return;
+    }
 
+    console.log('AdminDashboard: User confirmed deletion, proceeding...');
     setLoading(true);
     try {
       const result = await authService.deleteUser(userId);
+      console.log('AdminDashboard: Delete user result:', result);
+      
       if (result.success) {
+        console.log('AdminDashboard: User deleted successfully, reloading data');
         loadData(); // Refresh data
       } else {
+        console.error('AdminDashboard: Failed to delete user:', result.message);
         setError(result.message || 'Failed to delete user');
       }
     } catch (error) {
+      console.error('AdminDashboard: Delete user network error:', error);
       setError('Network error');
     } finally {
       setLoading(false);
+      console.log('AdminDashboard: Delete user operation completed');
     }
   };
 
@@ -209,17 +313,25 @@ const AdminDashboard: React.FC = () => {
   };
 
   const startEditUser = (user: User) => {
+    console.log('AdminDashboard: Starting user edit for:', user.id, user.name);
     setEditingUser(user);
     setEditForm({
       name: user.name,
       password: '',
       is_active: user.is_active
     });
+    console.log('AdminDashboard: Edit form initialized with user data');
   };
 
   // Instagram Accounts Management Functions
   const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('AdminDashboard: Creating Instagram account with data:', { 
+      username: newAccount.username, 
+      email: newAccount.email, 
+      phone: newAccount.phone,
+      hasNotes: !!newAccount.notes
+    });
     setLoading(true);
 
     try {
@@ -231,23 +343,40 @@ const AdminDashboard: React.FC = () => {
         newAccount.notes
       );
 
+      console.log('AdminDashboard: Create Instagram account result:', result);
+
       if (result.success) {
+        console.log('AdminDashboard: Instagram account created successfully, clearing form and reloading data');
         setShowCreateAccount(false);
         setNewAccount({ username: '', password: '', email: '', phone: '', notes: '' });
         loadData(); // Refresh data
       } else {
+        console.error('AdminDashboard: Failed to create Instagram account:', result.message);
         setError(result.message || 'Failed to create account');
       }
     } catch (error) {
+      console.error('AdminDashboard: Create Instagram account network error:', error);
       setError('Network error');
     } finally {
       setLoading(false);
+      console.log('AdminDashboard: Create Instagram account operation completed');
     }
   };
 
   const handleEditAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingAccount) return;
+    if (!editingAccount) {
+      console.error('AdminDashboard: No Instagram account selected for editing');
+      return;
+    }
+
+    console.log('AdminDashboard: Editing Instagram account:', editingAccount.id, 'with updates:', {
+      username: editAccountForm.username,
+      email: editAccountForm.email,
+      phone: editAccountForm.phone,
+      is_active: editAccountForm.is_active,
+      passwordChanged: !!editAccountForm.password
+    });
 
     setLoading(true);
     try {
@@ -261,53 +390,77 @@ const AdminDashboard: React.FC = () => {
       
       if (editAccountForm.password) {
         updates.password = editAccountForm.password;
+        console.log('AdminDashboard: Instagram account password will be updated');
       }
 
       const result = await authService.updateInstagramAccount(editingAccount.id, updates);
+      console.log('AdminDashboard: Edit Instagram account result:', result);
 
       if (result.success) {
+        console.log('AdminDashboard: Instagram account updated successfully, clearing form and reloading data');
         setEditingAccount(null);
         loadData(); // Refresh data
       } else {
+        console.error('AdminDashboard: Failed to update Instagram account:', result.message);
         setError(result.message || 'Failed to update account');
       }
     } catch (error) {
+      console.error('AdminDashboard: Edit Instagram account network error:', error);
       setError('Network error');
     } finally {
       setLoading(false);
+      console.log('AdminDashboard: Edit Instagram account operation completed');
     }
   };
 
   const handleDeleteAccount = async (accountId: string, username: string) => {
-    if (!window.confirm(`Are you sure you want to permanently delete Instagram account "${username}"? This action cannot be undone.`)) return;
+    console.log('AdminDashboard: Deleting Instagram account:', accountId, 'username:', username);
+    if (!window.confirm(`Are you sure you want to permanently delete Instagram account "${username}"? This action cannot be undone.`)) {
+      console.log('AdminDashboard: Instagram account deletion cancelled');
+      return;
+    }
 
+    console.log('AdminDashboard: User confirmed Instagram account deletion, proceeding...');
     setLoading(true);
     try {
       const result = await authService.deleteInstagramAccount(accountId);
+      console.log('AdminDashboard: Delete Instagram account result:', result);
+      
       if (result.success) {
+        console.log('AdminDashboard: Instagram account deleted successfully, reloading data');
         loadData(); // Refresh data
       } else {
+        console.error('AdminDashboard: Failed to delete Instagram account:', result.message);
         setError(result.message || 'Failed to delete account');
       }
     } catch (error) {
+      console.error('AdminDashboard: Delete Instagram account network error:', error);
       setError('Network error');
     } finally {
       setLoading(false);
+      console.log('AdminDashboard: Delete Instagram account operation completed');
     }
   };
 
   const handleImportAccounts = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('AdminDashboard: Starting Instagram accounts import');
+    
     if (!importFile) {
+      console.error('AdminDashboard: No file selected for import');
       setError('Please select a file to import');
       return;
     }
 
+    console.log('AdminDashboard: Importing file:', importFile.name, 'Size:', importFile.size, 'bytes');
     setLoading(true);
+    
     try {
       const result = await authService.importInstagramAccounts(importFile);
+      console.log('AdminDashboard: Import Instagram accounts result:', result);
       
       if (result.success) {
+        console.log('AdminDashboard: Import successful - added:', result.added_count, 'skipped:', result.skipped_count);
         setShowImportAccounts(false);
         setImportFile(null);
         loadData(); // Refresh data
@@ -316,18 +469,23 @@ const AdminDashboard: React.FC = () => {
         if (result.skipped_count && result.skipped_count > 0) {
           message += `, skipped ${result.skipped_count} accounts`;
         }
+        console.log('AdminDashboard: Import completed:', message);
         alert(message);
       } else {
+        console.error('AdminDashboard: Import failed:', result.message);
         setError(result.message || 'Failed to import accounts');
       }
     } catch (error) {
+      console.error('AdminDashboard: Import Instagram accounts network error:', error);
       setError('Network error');
     } finally {
       setLoading(false);
+      console.log('AdminDashboard: Import Instagram accounts operation completed');
     }
   };
 
   const startEditAccount = (account: InstagramAccount) => {
+    console.log('AdminDashboard: Starting Instagram account edit for:', account.id, account.username);
     setEditingAccount(account);
     setEditAccountForm({
       username: account.username,
@@ -337,46 +495,54 @@ const AdminDashboard: React.FC = () => {
       notes: account.notes,
       is_active: account.is_active
     });
+    console.log('AdminDashboard: Instagram account edit form initialized with account data');
   };
 
   // Logs modal functions
   const viewScriptLogs = async (scriptId: string) => {
+    console.log('AdminDashboard: Viewing script logs for:', scriptId);
     setSelectedScriptId(scriptId);
     setShowLogsModal(true);
     setLogsLoading(true);
     
     try {
-      const token = authService.getToken();
-      const response = await fetch(`getApiUrl('/script/${scriptId}/logs`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      const response = await fetch(getApiUrl(`/script/${scriptId}/logs`), {
+        headers: getApiHeaders()
       });
+      
+      console.log('AdminDashboard: Script logs API response status:', response.status);
       
       if (response.ok) {
         const data = await response.json();
+        console.log('AdminDashboard: Script logs data received:', data.logs ? data.logs.length + ' log lines' : 'No logs');
         setScriptLogContent(data.logs.join('\n'));
       } else {
+        console.error('AdminDashboard: Failed to load script logs, status:', response.status);
         setScriptLogContent('Failed to load logs');
       }
     } catch (error) {
-      console.error('Error loading logs:', error);
+      console.error('AdminDashboard: Error loading script logs:', error);
       setScriptLogContent('Error loading logs');
     } finally {
       setLogsLoading(false);
+      console.log('AdminDashboard: Script logs loading completed');
     }
   };
 
   const downloadScriptLogs = async () => {
-    if (!selectedScriptId) return;
+    if (!selectedScriptId) {
+      console.error('AdminDashboard: No script ID selected for download');
+      return;
+    }
+    
+    console.log('AdminDashboard: Downloading logs for script:', selectedScriptId);
     
     try {
-      const token = authService.getToken();
-      const response = await fetch(`getApiUrl('/script/${selectedScriptId}/download-logs`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      const response = await fetch(getApiUrl(`/script/${selectedScriptId}/download-logs`), {
+        headers: getApiHeaders()
       });
+      
+      console.log('AdminDashboard: Download logs API response status:', response.status);
       
       if (response.ok) {
         const blob = await response.blob();
@@ -388,9 +554,13 @@ const AdminDashboard: React.FC = () => {
         link.click();
         document.body.removeChild(link);
         window.URL.revokeObjectURL(url);
+        console.log('AdminDashboard: Script logs downloaded successfully');
+      } else {
+        console.error('AdminDashboard: Failed to download logs, status:', response.status);
+        alert('Failed to download logs');
       }
     } catch (error) {
-      console.error('Error downloading logs:', error);
+      console.error('AdminDashboard: Error downloading script logs:', error);
       alert('Error downloading logs');
     }
   };
@@ -415,7 +585,10 @@ const AdminDashboard: React.FC = () => {
       {error && (
         <div className="error-banner">
           <span>⚠️ {error}</span>
-          <button onClick={() => setError('')}>×</button>
+          <button onClick={() => {
+            console.log('AdminDashboard: Clearing error message:', error);
+            setError('');
+          }}>×</button>
         </div>
       )}
 
@@ -423,31 +596,46 @@ const AdminDashboard: React.FC = () => {
       <div className="admin-tabs">
         <button
           className={`tab-button ${activeTab === 'overview' ? 'active' : ''}`}
-          onClick={() => setActiveTab('overview')}
+          onClick={() => {
+            console.log('AdminDashboard: Switching to overview tab');
+            setActiveTab('overview');
+          }}
         >
           📊 Overview
         </button>
         <button
           className={`tab-button ${activeTab === 'users' ? 'active' : ''}`}
-          onClick={() => setActiveTab('users')}
+          onClick={() => {
+            console.log('AdminDashboard: Switching to users tab');
+            setActiveTab('users');
+          }}
         >
           👥 Users
         </button>
         <button
           className={`tab-button ${activeTab === 'accounts' ? 'active' : ''}`}
-          onClick={() => setActiveTab('accounts')}
+          onClick={() => {
+            console.log('AdminDashboard: Switching to accounts tab');
+            setActiveTab('accounts');
+          }}
         >
           📱 Instagram Accounts
         </button>
         <button
           className={`tab-button ${activeTab === 'logs' ? 'active' : ''}`}
-          onClick={() => setActiveTab('logs')}
+          onClick={() => {
+            console.log('AdminDashboard: Switching to logs tab');
+            setActiveTab('logs');
+          }}
         >
           📋 Script Logs
         </button>
         <button
           className={`tab-button ${activeTab === 'session-logs' ? 'active' : ''}`}
-          onClick={() => setActiveTab('session-logs')}
+          onClick={() => {
+            console.log('AdminDashboard: Switching to session-logs tab');
+            setActiveTab('session-logs');
+          }}
         >
           📈 Session Logs
         </button>
@@ -514,7 +702,10 @@ const AdminDashboard: React.FC = () => {
               <h2>User Management</h2>
               <button
                 className="create-user-btn"
-                onClick={() => setShowCreateUser(true)}
+                onClick={() => {
+                  console.log('AdminDashboard: Opening create user modal');
+                  setShowCreateUser(true);
+                }}
               >
                 + Create User
               </button>
@@ -597,13 +788,19 @@ const AdminDashboard: React.FC = () => {
               <div className="accounts-actions">
                 <button
                   className="create-account-btn"
-                  onClick={() => setShowCreateAccount(true)}
+                  onClick={() => {
+                    console.log('AdminDashboard: Opening create Instagram account modal');
+                    setShowCreateAccount(true);
+                  }}
                 >
                   + Add Account
                 </button>
                 <button
                   className="import-accounts-btn"
-                  onClick={() => setShowImportAccounts(true)}
+                  onClick={() => {
+                    console.log('AdminDashboard: Opening import Instagram accounts modal');
+                    setShowImportAccounts(true);
+                  }}
                 >
                   📂 Import Accounts
                 </button>
@@ -814,7 +1011,7 @@ const AdminDashboard: React.FC = () => {
                 </thead>
                 <tbody>
                   {logs.map((log, index) => (
-                    <tr key={index}>
+                    <tr key={`${log.timestamp}-${log.user_id}-${index}`}>
                       <td>{formatDate(log.timestamp)}</td>
                       <td>{log.user_id}</td>
                       <td>

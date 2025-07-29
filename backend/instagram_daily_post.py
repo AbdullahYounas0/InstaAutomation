@@ -7,6 +7,19 @@ import time
 import random
 from pathlib import Path
 import logging
+from datetime import datetime
+
+# Configure logging for Instagram Daily Post Automation
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('logs/instagram_daily_post.log'),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger('InstagramDailyPost')
 
 class InstagramDailyPostAutomation:
     def __init__(self, script_id, log_callback=None, stop_flag_callback=None, visual_mode=False):
@@ -19,28 +32,52 @@ class InstagramDailyPostAutomation:
         self.media_file = None
         self.is_video = False
         
+        # Initialize logging
+        logger.info(f"InstagramDailyPostAutomation initialized - Script ID: {script_id}")
+        logger.info(f"Visual mode: {visual_mode}")
+        
     def default_log(self, message, level="INFO"):
         """Default logging function"""
-        print(f"[{level}] {message}")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_message = f"[{timestamp}] [{level}] {message}"
+        print(log_message)
+        
+        # Also log to the logger
+        if level == "ERROR":
+            logger.error(message)
+        elif level == "WARNING" or level == "WARN":
+            logger.warning(message)
+        elif level == "SUCCESS":
+            logger.info(f"SUCCESS: {message}")
+        else:
+            logger.info(message)
         
     def log(self, message, level="INFO"):
         """Log message using the callback"""
+        logger.debug(f"Logging message: {message} (Level: {level})")
         self.log_callback(message, level)
 
     def should_stop(self):
         """Check if the script should stop"""
-        return self.stop_flag_callback()
+        should_stop = self.stop_flag_callback()
+        if should_stop:
+            logger.info(f"Stop flag detected for script {self.script_id}")
+        return should_stop
 
     def load_accounts_from_file(self, file_path):
         """Load Instagram credentials from Excel or CSV file."""
+        logger.info(f"Loading accounts from file: {file_path}")
         try:
             # Determine file type and read accordingly
             if file_path.endswith('.csv'):
+                logger.debug("Reading CSV file")
                 df = pd.read_csv(file_path)
             else:
+                logger.debug("Reading Excel file")
                 df = pd.read_excel(file_path)
             
             if df.empty:
+                logger.error("Accounts file is empty")
                 self.log("Error: Accounts file is empty.", "ERROR")
                 return []
             
@@ -49,6 +86,8 @@ class InstagramDailyPostAutomation:
             required_columns = ["Username", "Password"]
             missing_columns = [col for col in required_columns if col not in df.columns]
             if missing_columns:
+                logger.error(f"Missing columns in accounts file: {missing_columns}")
+                logger.error(f"Available columns: {list(df.columns)}")
                 self.log(f"Error: Missing columns in accounts file: {missing_columns}.", "ERROR")
                 self.log(f"Available columns: {list(df.columns)}", "ERROR")
                 return []
@@ -60,37 +99,62 @@ class InstagramDailyPostAutomation:
                 password = df.loc[i, "Password"]
                 if pd.notna(username) and pd.notna(password):
                     accounts.append((str(username).strip(), str(password).strip()))
+                    logger.debug(f"Loaded account: {str(username).strip()}")
             
+            logger.info(f"Successfully loaded {len(accounts)} accounts from file")
             self.log(f"Loaded {len(accounts)} account(s) from file.")
             return accounts
             
         except FileNotFoundError:
+            logger.error(f"File not found: {file_path}")
             self.log(f"Error: File {file_path} not found.", "ERROR")
             return []
         except Exception as e:
+            logger.error(f"Error loading accounts: {str(e)}")
             self.log(f"Error loading accounts: {e}", "ERROR")
             return []
 
     def set_media_file(self, media_path):
         """Set the media file and determine if it's a video"""
-        self.media_file = media_path
-        file_ext = Path(media_path).suffix.lower()
-        self.is_video = file_ext in self.supported_video_formats
-        self.log(f"Media file set: {os.path.basename(media_path)} ({'Video' if self.is_video else 'Image'})")
+        logger.info(f"Setting media file: {media_path}")
+        try:
+            if not os.path.exists(media_path):
+                logger.error(f"Media file does not exist: {media_path}")
+                raise FileNotFoundError(f"Media file not found: {media_path}")
+            
+            self.media_file = media_path
+            file_ext = Path(media_path).suffix.lower()
+            self.is_video = file_ext in self.supported_video_formats
+            
+            media_type = 'Video' if self.is_video else 'Image'
+            logger.info(f"Media file configured - Type: {media_type}, Extension: {file_ext}")
+            self.log(f"Media file set: {os.path.basename(media_path)} ({'Video' if self.is_video else 'Image'})")
+            
+        except Exception as e:
+            logger.error(f"Error setting media file: {str(e)}")
+            raise
 
     async def human_type(self, page, selector, text, delay_range=(50, 150)):
         """Type text with random delays"""
         if self.should_stop():
             return
-        element = await page.wait_for_selector(selector, state='visible')
-        await element.click()
-        await page.wait_for_timeout(random.randint(300, 800))
         
-        for char in text:
-            if self.should_stop():
-                return
-            await element.type(char)
-            await page.wait_for_timeout(random.randint(delay_range[0], delay_range[1]))
+        logger.debug(f"Human typing: '{text[:20]}...' with delay range {delay_range}")
+        try:
+            element = await page.wait_for_selector(selector, state='visible')
+            await element.click()
+            await page.wait_for_timeout(random.randint(300, 800))
+            
+            for char in text:
+                if self.should_stop():
+                    return
+                await element.type(char)
+                await page.wait_for_timeout(random.randint(delay_range[0], delay_range[1]))
+                
+            logger.debug("Human typing completed successfully")
+        except Exception as e:
+            logger.error(f"Error during human typing: {str(e)}")
+            raise
 
     async def update_visual_status(self, page, status_text, step=None):
         """Update visual status banner if in visual mode"""
@@ -195,16 +259,20 @@ class InstagramDailyPostAutomation:
 
     async def instagram_post_script(self, username, password, account_number, caption=""):
         """Main Instagram posting function for a single account."""
+        logger.info(f"Starting automation for account {account_number}: {username}")
         self.log(f"[Account {account_number}] Starting automation for {username}")
         
         if self.should_stop():
+            logger.warning(f"Stop flag detected before starting account {account_number}")
             return
         
         try:
             async with async_playwright() as p:
                 if self.should_stop():
+                    logger.warning(f"Stop flag detected during playwright initialization for account {account_number}")
                     return
                     
+                logger.debug(f"[Account {account_number}] Launching browser...")
                 self.log(f"[Account {account_number}] Launching browser...")
                 
                 # Configure browser launch args based on visual mode
@@ -463,6 +531,9 @@ class InstagramDailyPostAutomation:
                     if self.visual_mode:
                         # Keep browser open briefly to show final status
                         await asyncio.sleep(3)
+                    else:
+                        # In production, close immediately
+                        await asyncio.sleep(0.5)
                     self.log(f"[Account {account_number}] Closing browser...")
                     await browser.close()
                     
@@ -705,75 +776,112 @@ class InstagramDailyPostAutomation:
 
     async def run_automation(self, accounts_file, media_file, concurrent_accounts=5, caption="", auto_generate_caption=True):
         """Run Instagram posting for multiple accounts concurrently."""
+        logger.info(f"Starting Multi-Account Instagram Automation - Script ID: {self.script_id}")
+        logger.info(f"Parameters - Accounts file: {accounts_file}, Media file: {media_file}")
+        logger.info(f"Concurrent accounts: {concurrent_accounts}, Caption: {caption[:50]}...")
+        
         self.log("Starting Multi-Account Instagram Automation.")
         self.log("=" * 50)
         
-        # Set media file
-        self.set_media_file(media_file)
-        
-        # Load credentials
-        accounts = self.load_accounts_from_file(accounts_file)
-        if not accounts:
-            self.log("No valid accounts found. Please check your accounts file.", "ERROR")
-            return False
-        
-        # Limit concurrent accounts
-        accounts_to_process = accounts[:concurrent_accounts]
-        self.log(f"Processing {len(accounts_to_process)} account(s) concurrently.")
-        self.log("=" * 50)
-        
-        # Create semaphore to limit concurrent browsers
-        semaphore = asyncio.Semaphore(min(concurrent_accounts, 5))  # Max 5 concurrent browsers
-        
-        async def process_account_with_semaphore(username, password, account_num):
-            async with semaphore:
-                if self.should_stop():
-                    return False
-                return await self.instagram_post_script(username, password, account_num, caption)
-        
-        # Create tasks for each account
-        tasks = []
-        for i, (username, password) in enumerate(accounts_to_process, 1):
-            if self.should_stop():
-                break
-            self.log(f"Creating task for Account {i}: {username}.")
-            task = asyncio.create_task(process_account_with_semaphore(username, password, i))
-            tasks.append(task)
-        
-        if not tasks:
-            self.log("No tasks created", "ERROR")
-            return False
-        
-        self.log(f"Created {len(tasks)} tasks. Starting execution...")
-        
-        # Run all tasks concurrently
         try:
+            # Set media file
+            logger.debug("Setting media file...")
+            self.set_media_file(media_file)
+            
+            # Load credentials
+            logger.debug("Loading accounts from file...")
+            accounts = self.load_accounts_from_file(accounts_file)
+            if not accounts:
+                logger.error("No valid accounts found in the file")
+                self.log("No valid accounts found. Please check your accounts file.", "ERROR")
+                return False
+            
+            # Limit concurrent accounts
+            accounts_to_process = accounts[:concurrent_accounts]
+            logger.info(f"Will process {len(accounts_to_process)} out of {len(accounts)} total accounts")
+            self.log(f"Processing {len(accounts_to_process)} account(s) concurrently.")
+            self.log("=" * 50)
+            
+            # Create semaphore to limit concurrent browsers
+            max_concurrent = min(concurrent_accounts, 5)  # Max 5 concurrent browsers
+            semaphore = asyncio.Semaphore(max_concurrent)
+            logger.info(f"Created semaphore with limit: {max_concurrent}")
+            
+            async def process_account_with_semaphore(username, password, account_num):
+                async with semaphore:
+                    if self.should_stop():
+                        logger.warning(f"Stop flag detected for account {account_num}")
+                        return False
+                    logger.debug(f"Processing account {account_num} with semaphore")
+                    return await self.instagram_post_script(username, password, account_num, caption)
+            
+            # Create tasks for each account
+            tasks = []
+            for i, (username, password) in enumerate(accounts_to_process, 1):
+                if self.should_stop():
+                    logger.warning("Stop flag detected while creating tasks")
+                    break
+                logger.debug(f"Creating task for Account {i}: {username}")
+                self.log(f"Creating task for Account {i}: {username}.")
+                task = asyncio.create_task(process_account_with_semaphore(username, password, i))
+                tasks.append(task)
+            
+            if not tasks:
+                logger.error("No tasks were created")
+                self.log("No tasks created", "ERROR")
+                return False
+            
+            logger.info(f"Created {len(tasks)} tasks. Starting concurrent execution...")
+            self.log(f"Created {len(tasks)} tasks. Starting execution...")
+            
+            # Run all tasks concurrently
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            # Summary
-            self.log("\nResults Summary:")
+            # Analyze results
             successful_count = 0
+            failed_count = 0
+            error_count = 0
+            
+            logger.info("Analyzing automation results...")
+            self.log("\nResults Summary:")
+            
             for i, result in enumerate(results, 1):
                 if isinstance(result, Exception):
+                    logger.error(f"Account {i} failed with exception: {str(result)}")
                     self.log(f"Account {i}: Failed with error: {result}", "ERROR")
+                    error_count += 1
                 elif result:
+                    logger.info(f"Account {i} completed successfully")
                     self.log(f"Account {i}: Completed successfully.", "SUCCESS")
                     successful_count += 1
                 else:
+                    logger.warning(f"Account {i} failed")
                     self.log(f"Account {i}: Failed", "ERROR")
+                    failed_count += 1
+            
+            # Final summary
+            total_accounts = len(results)
+            logger.info(f"Automation completed - Success: {successful_count}, Failed: {failed_count}, Errors: {error_count}")
             
             self.log("=" * 50)
-            if successful_count == len(results):
-                self.log(f"🎉 All accounts completed successfully! {successful_count}/{len(results)} accounts processed.", "SUCCESS")
+            if successful_count == total_accounts:
+                logger.info("All accounts completed successfully!")
+                self.log(f"🎉 All accounts completed successfully! {successful_count}/{total_accounts} accounts processed.", "SUCCESS")
             elif successful_count > 0:
-                self.log(f"⚠️ Partial success: {successful_count}/{len(results)} accounts completed successfully.", "WARNING") 
+                logger.warning(f"Partial success: {successful_count}/{total_accounts} accounts")
+                self.log(f"⚠️ Partial success: {successful_count}/{total_accounts} accounts completed successfully.", "WARNING") 
             else:
-                self.log(f"❌ No accounts completed successfully. {len(results)} accounts failed.", "ERROR")
+                logger.error("No accounts completed successfully")
+                self.log(f"❌ No accounts completed successfully. {total_accounts} accounts failed.", "ERROR")
             
-            self.log(f"Automation finished! {successful_count}/{len(results)} accounts processed successfully.")
+            final_message = f"Automation finished! {successful_count}/{total_accounts} accounts processed successfully."
+            logger.info(final_message)
+            self.log(final_message)
+            
             return successful_count > 0
                     
         except Exception as e:
+            logger.error(f"Critical error in run_automation: {str(e)}", exc_info=True)
             self.log(f"Error in concurrent execution: {e}", "ERROR")
             return False
 
@@ -782,9 +890,13 @@ async def run_daily_post_automation(script_id, accounts_file, media_file, concur
                                    caption="", auto_generate_caption=True, visual_mode=False,
                                    log_callback=None, stop_callback=None):
     """Main function to run the automation"""
+    logger.info(f"Starting daily post automation - Script ID: {script_id}")
+    logger.info(f"Configuration - Visual mode: {visual_mode}, Concurrent accounts: {concurrent_accounts}")
+    
     automation = InstagramDailyPostAutomation(script_id, log_callback, stop_callback, visual_mode)
     
     try:
+        logger.debug("Calling run_automation method...")
         success = await automation.run_automation(
             accounts_file=accounts_file,
             media_file=media_file,
@@ -792,8 +904,16 @@ async def run_daily_post_automation(script_id, accounts_file, media_file, concur
             caption=caption,
             auto_generate_caption=auto_generate_caption
         )
+        
+        if success:
+            logger.info(f"Daily post automation completed successfully - Script ID: {script_id}")
+        else:
+            logger.warning(f"Daily post automation completed with failures - Script ID: {script_id}")
+            
         return success
+        
     except Exception as e:
+        logger.error(f"Critical error in run_daily_post_automation: {str(e)}", exc_info=True)
         if log_callback:
             log_callback(f"Automation failed: {e}", "ERROR")
         return False
